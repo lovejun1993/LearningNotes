@@ -1,0 +1,1452 @@
+---
+layout: post
+title: "kvc"
+date: 2013-07-01 16:37:21 +0800
+comments: true
+categories: 
+---
+
+##苹果KVC文档
+
+https://developer.apple.com/library/prerelease/content/documentation/Cocoa/Conceptual/KeyValueCoding/Articles/BasicPrinciples.html#//apple_ref/doc/uid/20002170-BAJEAIEE
+
+***
+
+###一切都建立在key-value coding 键值对
+
+一个键值对字典表示一个类对象
+
+```objc
+@{
+	@"name" : @"haha",
+	@"age" : @21，
+}
+```
+
+```objc
+@Interface Person
+@property NSString *name;
+@property NSInteger age;
+@end
+@implementation Person
+@end
+```
+
+应该说ObjectiveC类的对象是建立在`key-value coding`键值对的存储之上的。
+
+```
+NSDictionary *dic = @{
+        @"person_001": @{
+                @"name" : @"xiaoming",
+                @"age" : @"19",
+                @"dogs" : @[
+                        @{
+                            @"dogId" : @"1",
+                            @"name" : @"法国斗牛犬",
+                            },
+                        @{
+                            @"dogId" : @"2",
+                            @"name" : @"英国大丹犬",
+                            },
+                        ],
+                @"cats" : @[
+                        @{
+                            @"catId" : @"1",
+                            @"name" : @"咖啡毛",
+                            },
+                        @{
+                            @"catId" : @"2",
+                            @"name" : @"傻猫",
+                            },
+                        ],
+                
+                @"wife" : @{
+                        @"name" : @"lili",
+                        @"age" : @"19",
+                        @"dogs" : @[
+                                @{
+                                    @"dogId" : @"1",
+                                    @"name" : @"法国斗牛犬",
+                                    },
+                                @{
+                                    @"dogId" : @"2",
+                                    @"name" : @"英国大丹犬",
+                                    },
+                                ],
+                        @"cats" : @[
+                                @{
+                                    @"catId" : @"1",
+                                    @"name" : @"咖啡毛",
+                                    },
+                                @{
+                                    @"catId" : @"2",
+                                    @"name" : @"傻猫",
+                                    },
+                                ],
+                        }
+                }
+        };
+```
+
+按照现在OO的思想，一个是Person类、一个Dog类、一个Cat类，但是最原始的数据组成就是一个key对应一个value的形式。
+
+很显然使用OO单独划分出类之后，用他的对象去表示一个数据会让代码最复用，但是最终数据存储其实就是`key-value`的形式。
+
+###key 和 keyPath 
+
+key就是一个单个的key键，而keyPath是带有`路径`的key键。
+
+对于上面是一个简单的key:
+
+```objc
+id person = [dic valueForKey:@"person_001"];
+```
+
+如果是带有路径的key:
+
+```objc
+NSString *name = [dic valueForKeyPath:@"person_001.name"];
+NSString *age = [dic valueForKeyPath:@"person_001.age"];
+NSArray *dogNames = [dic valueForKeyPath:@"person_001.dogs.name"];
+NSArray *catIds = [dic valueForKeyPath:@"person_001.wife.cats.catId"];
+```
+
+输出结果
+
+```
+(lldb) po name
+xiaoming
+
+(lldb) po age
+19
+
+(lldb) po dogNames
+<__NSArrayI 0x17422d260>(
+法国斗牛犬,
+英国大丹犬
+)
+
+
+(lldb) po catIds
+<__NSArrayI 0x17422d680>(
+1,
+2
+)
+```
+
+完美运行，可以想象如果是取操作Person对象、Cat对象、Dog对象，然后遍历每一个子对象，取出每一个属性值，然后添加到一个mutable数组时，是那么的麻烦。
+
+***
+
+### Getting Attribute Values Using Key-Value Coding
+
+```objc
+valueForKey: 
+valueForKeyPath:
+valueForUndefinedKey: 如果没有对应key时调用的函数实现，默认是抛出NSUndefinedKeyException让程序崩溃
+dictionaryWithValuesForKeys: 将对象的实例变量值转换成一个NSDictionary对象
+```
+
+```objc
+@interface KVCPerson : NSObject {
+    @package
+    NSString *_name;
+    NSInteger _age;
+}
+@end
+@implementation KVCPerson
+@end
+```
+
+```objc
+- (void)test10 {
+    KVCPerson *person = [KVCPerson new];
+    person->_age = 19;
+    person->_name = @"hahaha";
+    NSDictionary *dic = [person dictionaryWithValuesForKeys:@[@"age", @"name"]];
+    NSLog(@"dic = %@", dic);
+}
+```
+
+输出结果
+
+```
+2016-09-13 17:01:17.378 Demos[5568:441976] dic = {
+    age = 19;
+    name = hahaha;
+}
+```
+
+苹果有一个Note注意提醒
+
+- (1) Collection objects, such as `NSArray, NSSet, NSDictionary`, can’t contain `nil` as a value
+
+- (2) Instead, you represent nil values using a special object, `NSNull`。 NSNull provides a `single instance` that represents the `nil` value for object properties
+	- `[NSNull null]`
+	- `(id)kCFNull`
+
+```objc
+- (void)test10 {
+    KVCPerson *person = [KVCPerson new];
+    person->_age = 19;
+    person->_name = @"hahaha";
+    NSDictionary *dic = [person dictionaryWithValuesForKeys:@[@"age", @"name"]];
+    NSLog(@"dic = %@", dic);
+    
+    [person setValue:[NSNull null] forKey:@"name"];
+    id retName = [person valueForKey:@"name"];
+    NSLog(@"name = %@, [name class] = %@", retName, [retName class]);
+}
+```
+
+输出结果
+
+```
+2016-09-13 17:10:31.666 Demos[5611:444225] dic = {
+    age = 19;
+    name = hahaha;
+}
+2016-09-13 17:10:31.669 Demos[5611:444225] name = <null>, [name class] = NSNull
+```
+
+***
+
+### Setting Attribute Values Using Key-Value Coding
+
+```objc
+setValue:forKey:
+setValue:forUndefinedKey: 没有key时执行的回调，默认实现也是抛出异常，直接程序崩溃
+setValue:forKeyPath:
+setValuesForKeysWithDictionary: 将一个字典对象通过KVC设置给NSObject对象对应的Ivar实例变量
+setNilValueForKey: 当设置一个nil给对象的Ivar时被调用，默认实现就是抛异常让程序崩溃
+```
+
+```objc
+- (void)test10 {
+    KVCPerson *person = [KVCPerson new];
+    NSDictionary *dic = @{
+                          @"name" : @"haha",
+                          @"age" : @(19),
+                          };
+    [person setValuesForKeysWithDictionary:dic];
+    NSLog(@"name = %@, age = %ld", person->_name, person->_age);
+}
+```
+
+输出结果
+
+```
+2016-09-13 17:17:39.351 Demos[5647:446041] name = haha, age = 19
+```
+
+重写KVCPerson的设置nil回调函数实现，防止崩溃并设置一个NSNull单例对象
+
+```objc
+@interface KVCPerson : NSObject {
+    @package
+    NSString *_name;
+    NSInteger _age;
+}
+@end
+@implementation KVCPerson
+- (void)setNilValueForKey:(NSString *)key {
+    [self setValue:(id)kCFNull forKey:key];
+}
+@end
+```
+
+```objc
+- (void)test10 {
+    KVCPerson *person = [KVCPerson new];
+    NSDictionary *dic = @{
+                          @"name" : @"haha",
+                          @"age" : @(19),
+                          };
+    [person setValuesForKeysWithDictionary:dic];
+    [person setNilValueForKey:@"name"];
+    NSLog(@"name = %@, age = %ld", person->_name, person->_age);
+}
+```
+
+输出结果
+
+```
+2016-09-13 17:27:17.865 Demos[5691:448651] name = <null>, age = 19
+```
+
+***
+
+### Key-Value Coding Accessor Methods
+
+虽然可以直接使用Ivar进行赋值，但一般很少这么用，因为与实例变量Ivar内存布局有一定关系，大多时候都是给Ivar提供setter/getter方法实现来间接操作Ivar。
+
+setValue:forKey: 的步骤:
+
+- (1) 根据key找到对应的`Ivar`
+- (2) 然后将value设置给Ivar
+
+valueForKey:、valueForKeyPath: 的步骤:
+
+- (1) 根据key找到对应的`Ivar`
+- (2) 获取Ivar的值，并返回
+
+
+一些简单实例变量的setter与getter就不写了。
+
+
+主要记录下一些关于`NSArray、NSSet`实例变量的一些由编译器联想生成的快捷方法实现:
+
+###`NSArray、NSSet` Ivar Getter Indexed Accessors
+
+```objc
+-countOf<Key>
+```
+
+
+```objc
+-objectIn<Key>AtIndex: or -<key>AtIndexes:
+```
+
+
+```objc
+-get<Key>:range:
+```
+
+下面是看下具体使用
+
+```objc
+@interface KVCChildModel : NSString
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, assign) NSInteger price;
+@end
+@implementation KVCChildModel
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<%@-%p> _name = %@", [self class], self, _name];
+}
+- (NSString *)debugDescription {
+    return [self description];
+}
+@end
+```
+
+```objc
+@interface KVCModel : NSObject
+@property (nonatomic, assign)       NSInteger arg1;
+@property (nonatomic, copy)         NSString *arg2;
+@property (nonatomic, strong)       NSArray *childModels;//to-many
+@end
+@implementation KVCModel
+
+// 编译器联想生成的，只需要敲count即可
+- (NSUInteger)countOfChildModels {
+    return _childModels.count;
+}
+
+// 编译器联想生成的，只需要敲objectIn即可
+- (id)objectInChildModelsAtIndex:(NSUInteger)index {
+    if (index < _childModels.count) {
+        return [_childModels objectAtIndex:index];
+    }
+    return nil;
+}
+
+// 编译器联想生成的，只需要敲childModelsAt即可
+- (NSArray *)childModelsAtIndexes:(NSIndexSet *)indexes {
+    return [_childModels objectsAtIndexes:indexes];
+}
+
+@end
+```
+
+测试代码
+
+```objc
+- (void)test11 {
+    KVCModel *model = [KVCModel new];
+    NSMutableArray *childs = [NSMutableArray new];
+    for (NSInteger i = 0; i < 10; i++) {
+        KVCChildModel *child = [KVCChildModel new];
+        child.name = [NSString stringWithFormat:@"name_%ld", i];
+        [childs addObject:child];
+    }
+    model.childModels = childs;
+    
+    NSUInteger count = [model countOfChildModels];
+    id obj = [model objectInChildModelsAtIndex:5];
+    NSArray *objs1 = [model childModelsAtIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, 5)]];
+    
+}
+```
+
+输出结果
+
+```
+(lldb) po count
+10
+
+(lldb) po obj
+<KVCChildModel-0x7ff2aa71cee0> _name = name_5
+
+(lldb) po objs1
+<__NSArrayI 0x7ff2aa7e11b0>(
+<KVCChildModel-0x7ff2aa7e6080> _name = name_0,
+<KVCChildModel-0x7ff2aa704070> _name = name_1,
+<KVCChildModel-0x7ff2aa7c3120> _name = name_2,
+<KVCChildModel-0x7ff2ac816c10> _name = name_3,
+<KVCChildModel-0x7ff2aa7e2c60> _name = name_4
+)
+```
+
+这些方法是编译器根据`NSArray、NSSet`属性实例变量自动联想生成的，我们可以按需去实现，不去实现也是没问题的。
+
+### `NSMutableArray、NSMutableSet` Ivar Mutable Indexed Accessors
+
+- insert....
+- add....
+
+感觉都是一些比较鸡肋的方法实现.
+
+***
+
+###@property声明的属性做了一些什么
+
+```
+
+#import <Foundation/Foundation.h>
+
+@interface Person : NSObject
+
+@property (nonatomic, copy) NSString *name;
+
+@end
+```
+
+```
+#import "Person.h"
+
+@implementation Person
+
+@end
+```
+		
+那么`@property (nonatomic, copy) NSString *name;`其实就是包含如下:		
+
+- (1) 生成了一个对象的实例成员变量
+
+```objc
+NSString *_name;
+```
+
+- (2) 生成了一个实例方法来`修改`成员变量的方法实现
+
+```objc
+- (void)setName:(NSString *)name {
+	....
+}
+```
+
+- (3) 生成了一个实例方法来`读取`成员变量值的方法实现
+
+```objc
+- (NSString *)name {
+	return _name;
+}
+```
+
+也就是说访问实例变量（Ivar）的方式有两种:
+
+- (1) 间接操作: Ivar的setter/getter
+- (2) 直接操作: KVC键值对
+
+但最终操作的都是对象的实例变量Ivar。
+
+****
+
+###kvc设置对象的实例变量 与 调用对象属性方法 的区别
+
+```objc
+@interface KVCModel : NSObject
+@property (nonatomic, assign) NSInteger arg1;
+@property (nonatomic, copy) NSString *arg2;
+@end
+@implementation KVCModel
+- (NSString *)description {
+    return [NSString stringWithFormat:@"arg1 = %ld, arg2 = %@", _arg1, _arg2];
+}
+@end
+
+@interface KVCViewController ()
+
+@end
+
+@implementation KVCViewController
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self test1];
+}
+
+- (void)test1 {
+    KVCModel *model = [KVCModel new];
+    model.arg1 = 19;
+    model.arg2 = @"haha";
+    NSLog(@"%@", [model description]);
+    
+    [model setValue:@(20) forKey:@"arg1"];
+    [model setValue:@"hello" forKey:@"arg2"];
+    NSLog(@"%@", [model description]);
+}
+
+@end
+```
+
+输出结果
+
+```
+2015-08-03 13:05:10.689 Demos[6455:420604] arg1 = 19, arg2 = haha
+2015-08-03 13:05:10.690 Demos[6455:420604] arg1 = 20, arg2 = hello
+```
+
+可以看到其实使用KVC设置实例变量的值和调用属性setter实现的效果是有一样的。
+
+将上面KVC访问实例变量的key改成如下:
+
+```objc
+// 变量名前加一个 _
+[model setValue:@(20) forKey:@"_arg1"];
+[model setValue:@"hello" forKey:@"_arg2"];
+NSLog(@"%@", [model description]);
+```
+
+程序运行效果仍然一样。那如果随便改一些了:
+
+```objc
+[model setValue:@(20) forKey:@"xxxx"];
+[model setValue:@"hello" forKey:@"yyyyy"];
+NSLog(@"%@", [model description]);
+```
+
+程序运行后，走到如下代码时立刻崩溃:
+
+```
+*** Terminating app due to uncaught exception 'NSUnknownKeyException', reason: '[<KVCModel 0x7f99d8742b70> setValue:forUndefinedKey:]: this class is not key value coding-compliant for the key xxxx.'
+*** First throw call stack:
+```
+
+提示没有从KVCModel对象中找到这样的一个key是`xxxx`。
+
+
+###KVC实际上是根据key查找Class中对应的Ivar，继而对找到的Ivar进行值的存取
+
+- (1) 首先使用`arg1`查询
+- (2) 如果第(1)没有找到实例变量，就继续使用`_arg1`查询实例变量
+- (3) 如果(1)与(2)都没有找到，就崩溃程序
+
+
+使用KVC直接设置实例变量，绕过了`@property`实现的实例变量的`内存管理`、`KVO通知`、`变量的读写权限`。 一般情况下，不建议这么使用。
+
+***
+
+###使用KVC修改`私有`成员变量Ivar的值
+
+```objc
+@interface KVCModel : NSObject
+@property (nonatomic, assign) NSInteger arg1;
+@property (nonatomic, copy) NSString *arg2;
+@end
+
+@implementation KVCModel {
+    NSString *_arg3;//私有实例变量
+}
+- (NSString *)description {
+    return [NSString stringWithFormat:@"arg1 = %ld, arg2 = %@", _arg1, _arg2];
+}
+@end
+```
+
+```objc
+@implementation KVCViewController
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {    
+    [self test2];
+}
+
+- (void)test2 {
+    KVCModel *model = [KVCModel new];
+    [model setValue:@"hello" forKey:@"arg3"];
+    NSLog(@"私有实例变量arg3 = %@", [model valueForKey:@"arg3"]);
+}
+
+@end
+```
+
+运行结果
+
+```
+2015-08-03 13:14:58.828 Demos[6598:460273] 私有实例变量arg3 = hello
+```
+
+可以看到完全是可以对私有的实例变量进行读写的。
+
+###还可以直接使用runtime函数，直接获取key对应的Ivar，进而进行实例变量值的存取
+
+```objc
+- (void)test3 {
+    KVCModel *model = [KVCModel new];
+    
+    ///【重要】 如果使用运行时函数获取实例变量，一定要使用`_变量名`，必须和实例变量名保持一致
+    Ivar ivar = class_getInstanceVariable([model class], "_arg3");
+    
+    object_setIvar(model, ivar, @"hello");
+    
+    NSLog(@"私有实例变量arg3 = %@", object_getIvar(model, ivar));
+}
+```
+
+运行结果
+
+```
+2015-08-03 13:20:16.000 Demos[6728:485395] 私有实例变量arg3 = hello
+```
+
+但如果`class_getInstanceVariable(cls, @"arg3")`获取不到Ivar:
+
+```objc
+- (void)test3 {
+    KVCModel *model = [KVCModel new];
+    
+    /// 如果使用运行时函数获取实例变量，一定要使用`_变量名`，必须和实例变量名保持一致
+    Ivar ivar = class_getInstanceVariable([model class], "arg3");
+    
+    object_setIvar(model, ivar, @"hello");
+    NSLog(@"私有实例变量arg3 = %@", object_getIvar(model, ivar));
+}
+```
+
+输出
+
+```
+2015-09-17 16:04:55.413 Demos[6187:40203] 私有实例变量arg3 = (null)
+```
+
+可见`setValue:forKey:`应该是先使用`arg3`查询Ivar，然后再使用`_arg3`查询Ivar。
+
+###所以我觉得`setValue:forKey:`的底层实现可能是利用runtime完成:
+
+```objc
+- (void)setValue:(nullable id)value forKey:(NSString *)key {
+	//1. 
+	Class cls = [self class];
+	
+	//2.
+	Ivar ivar = class_getInstanceVariable(cls, [key utf8String]);
+	if (!ivar) {
+		class_getInstanceVariable(cls, [NSString stringWithFormat:@"_%@", [key utf8String]]);
+	}
+	
+	//3. 
+	object_setIvar(self, ivar, value);
+}
+```
+
+那么对于`objectForKey:`实现就同理了。那么只有这样才能是通过`key`找到Class中对应的`Ivar`，继而对Ivar进行setter/getter。
+
+****
+
+###key找不到时，处理异常
+
+使用kvc时，如果代码中的key值不存在，会抛出异常。可以在类中通过重写它提供下面的这个方法来解决这个问题。
+
+```objc
+- (void)setValue:(id)value forUndefinedKey:(NSString *)key;
+```
+
+```objc
+@interface KVCModel : NSObject
+@property (nonatomic, assign) NSInteger arg1;
+@property (nonatomic, copy) NSString *arg2;
+@end
+
+@implementation KVCModel {
+    NSString *_arg3;//私有实例变量
+}
+
+- (NSString *)description {
+    return [NSString stringWithFormat:@"arg1 = %ld, arg2 = %@", _arg1, _arg2];
+}
+
+- (void)setValue:(id)value forUndefinedKey:(NSString *)key {
+    NSLog(@"不存在的key");
+}
+
+@end
+```
+
+```objc
+@implementation KVCViewController
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self test4];
+}
+
+- (void)test4 {
+    KVCModel *model = [KVCModel new];
+    [model setValue:@"hello" forKey:@"xxxx"];
+}
+
+@end
+```
+
+运行结果
+
+```
+2015-08-03 13:24:24.071 Demos[6827:509952] 不存在的key
+```
+
+****
+
+###KVC键值对赋值提供两种方式
+
+- 第一种: `setValue:forKey:`简单形读写，实例变量没有层级的
+
+- 第二种: `setValue:forKeyPath:`复杂形读写，实例变量有多层级关系的（结合对象、自定义对象...等）
+
+
+```objc
+@interface KVCChildModel : NSString
+@property (nonatomic, copy) NSString *name;
+@end
+@implementation KVCChildModel
+@end
+```
+
+```objc
+@interface KVCModel : NSObject
+@property (nonatomic, assign) NSInteger arg1;
+@property (nonatomic, copy) NSString *arg2;
+@property (nonatomic, strong) KVCChildModel *childModel;
+@property (nonatomic, strong) NSArray *childModels;
+@end
+
+@implementation KVCModel {
+    NSString *_arg3;//私有实例变量
+}
+
+- (NSString *)description {
+    return [NSString stringWithFormat:@"arg1 = %ld, arg2 = %@", _arg1, _arg2];
+}
+
+- (void)setValue:(id)value forUndefinedKey:(NSString *)key {
+    NSLog(@"不存在的key");
+}
+
+@end
+```
+
+```objc
+@implementation KVCViewController
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self test5];
+}
+
+- (void)test5 {
+    
+    KVCModel *model = [KVCModel new];
+    model.arg1 = 19;
+    model.arg2 = @"xiongzenghui001";
+    
+    KVCChildModel *child = [KVCChildModel new];
+    child.name = @"xiongzenghui002";
+    model.childModel = child;
+    
+    NSMutableArray *childs = [NSMutableArray new];
+    for (NSInteger i = 0; i < 3; i++) {
+        KVCChildModel *child = [KVCChildModel new];
+        child.name = [NSString stringWithFormat:@"xiongzenghui00%ld", (i+3)];
+        [childs addObject:child];
+    }
+    model.childModels = [childs copy];
+    
+    //1.
+    KVCChildModel *tmpModel = [model valueForKey:@"childModel"];
+    NSLog(@"tmpModel.name = %@", tmpModel.name);
+    
+    //2.
+    NSArray *tmpModels = [model valueForKey:@"childModels"];
+    for (KVCChildModel *model in tmpModels) {
+        NSLog(@"model.name = %@", model.name);
+    }
+    
+    /**
+     *  上面是获取KVCModel对象的第一级实例变量值，但是如果想继续获取得到的变量值它下面的其他变量值了？
+     */
+    
+    //3. 会导致崩溃的错误代码
+//    NSLog(@"%@", [model valueForKey:@"childModel.name"]);
+//    NSArray *names = [model valueForKey:@"childModels.name"];
+    
+    //4. 正确应该是带有路径的KVC函数
+    NSLog(@"%@", [model valueForKeyPath:@"childModel.name"]);
+    NSArray *names = [model valueForKeyPath:@"childModels.name"];
+    for (NSString *name in names) {
+        NSLog(@"name = %@", name);
+    };
+}
+
+@end
+```
+
+运行结果
+
+```
+2016-08-03 13:45:04.970 Demos[8226:574663] tmpModel.name = xiongzenghui002
+2016-08-03 13:45:04.970 Demos[8226:574663] model.name = xiongzenghui003
+2016-08-03 13:45:04.970 Demos[8226:574663] model.name = xiongzenghui004
+2016-08-03 13:45:04.971 Demos[8226:574663] model.name = xiongzenghui005
+2016-08-03 13:45:04.971 Demos[8226:574663] xiongzenghui002
+2016-08-03 13:45:04.971 Demos[8226:574663] name = xiongzenghui003
+2016-08-03 13:45:04.971 Demos[8226:574663] name = xiongzenghui004
+2016-08-03 13:45:04.971 Demos[8226:574663] name = xiongzenghui005
+```
+
+那么针对`setValue:forKeyPath:`使用和上面是一样的。
+
+小结使用`forKey:`和`forKeyPath:`区别:
+
+- `forKey:`只能对`单个路径`的key设置value
+- `forKeyPath:`包含`forKey:`，单个路径的key设置value
+- `forKeyPath:`更加可以针对`多个路径的key`设置value，路径使用`.`来分开
+
+***
+
+###使用`valueForKeyPath:`直接读取一个对象的数组内每一个对象的变量值，并进行基本运算
+
+```objc
+@interface KVCChildModel : NSString
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, assign) NSInteger price;
+@end
+@implementation KVCChildModel
+@end
+```
+
+```objc
+@interface KVCModel : NSObject
+@property (nonatomic, assign) NSInteger arg1;
+@property (nonatomic, copy) NSString *arg2;
+@property (nonatomic, strong) KVCChildModel *childModel;
+@property (nonatomic, strong) NSArray *childModels;
+@end
+
+@implementation KVCModel {
+    NSString *_arg3;//私有实例变量
+}
+
+- (NSString *)description {
+    return [NSString stringWithFormat:@"arg1 = %ld, arg2 = %@", _arg1, _arg2];
+}
+
+- (void)setValue:(id)value forUndefinedKey:(NSString *)key {
+    NSLog(@"不存在的key");
+}
+
+@end
+```
+
+```objc
+@implementation KVCViewController
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self test6];
+}
+
+- (void)test6 {
+    
+    KVCModel *model = [KVCModel new];
+    model.arg1 = 19;
+    model.arg2 = @"xiongzenghui001";
+    
+    NSMutableArray *childs = [NSMutableArray new];
+    for (NSInteger i = 0; i < 3; i++) {
+        KVCChildModel *child = [KVCChildModel new];
+        child.name = [NSString stringWithFormat:@"xiongzenghui00%ld", (i+3)];
+        child.price = (i + 1) * (rand() % 100);
+        NSLog(@"child.price = %ld", child.price);
+        [childs addObject:child];
+    }
+    model.childModels = [childs copy];
+    
+    // 直接对keyPath中的数组中所有对象的price求和
+    NSInteger totoalPrice = [[model valueForKeyPath:@"childModels.@sum.price"] integerValue];
+    NSLog(@"totoalPrice = %ld", totoalPrice);
+}
+
+@end
+```
+
+运行结果
+
+```
+2016-08-03 13:52:21.145 Demos[8349:614432] child.price = 7
+2016-08-03 13:52:21.146 Demos[8349:614432] child.price = 98
+2016-08-03 13:52:21.146 Demos[8349:614432] child.price = 219
+2016-08-03 13:52:21.146 Demos[8349:614432] totoalPrice = 324
+```
+
+
+直接对数组内所有对象的某一个属性变量进行运算，还有如下这些:
+
+- @count: 返回一个值为集合中对象总数的NSNumber对象。
+- @sum: 首先把集合中的每个对象都转换为double类型，然后计算其总，最后返回一个值为这个总和的NSNumber对象。
+- @avg: Takes the double value of each object in the collection, and returns the average value as an NSNumber.
+- @max: 使用compare:方法来确定最大值。所以为了让其正常工作，集合中所有的对象都必须支持和另一个对象的比较。
+- @min: 和@max一样，但是返回的是集合中的最小值。
+
+```
+NSLog(@"show: 数组中总成绩SUMscore = %@",[self.testAry valueForKeyPath:@"@sum.score"] );
+```
+
+```
+NSLog(@"show2: 数组中平均成绩AVGscore = %@",[self.testAry valueForKeyPath:@"@avg.score"] );
+```
+
+```
+NSLog(@"show2: 数组中最大成绩MAXscore = %@",[self.testAry valueForKeyPath:@"@max.score"] );
+```
+
+```
+NSLog(@"show2: 数组中最小成绩MINscore = %@",[self.testAry valueForKeyPath:@"@min.score"] );
+```
+
+对一个数组，@unionOfObjects / @distinctUnionOfObjects 运算符
+
+```
+NSArray *inventory = @[iPhone5, iPhone5, iPhone5, iPadMini, macBookPro, macBookPro];
+```
+
+- @unionOfObjects 效果
+
+```
+[inventory valueForKeyPath:@"@unionOfObjects.name"]; 
+
+结果: "iPhone 5", "iPhone 5", "iPhone 5", "iPad Mini", "MacBook Pro", "MacBook Pro"
+```
+
+- @distinctUnionOfObjects 效果
+
+```
+[inventory valueForKeyPath:@"@distinctUnionOfObjects.name"]; 
+
+结果: "iPhone 5", "iPad Mini", "MacBook Pro"
+```
+
+### dictionaryWithValuesForKeys:/setValuesForKeysWithDictionary: ，对象与字典之间的快速转换
+
+```objc
+@interface KVCChildModel : NSString
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, assign) NSInteger price;
+@end
+@implementation KVCChildModel
+@end
+```
+
+```objc
+- (void)test7 {
+    KVCChildModel *model = [KVCChildModel new];
+    
+    NSDictionary *dict = @{
+                           @"name" : @"xiongzenghui",
+                           @"price" : @300,
+                           };
+    
+    [model setValuesForKeysWithDictionary:dict];
+    
+    NSLog(@"model.name = %@", model.name);
+    NSLog(@"model.price = %ld", model.price);
+}
+```
+
+运行结果
+
+```
+2016-08-03 18:51:32.539 Demos[37574:2366999] model.name = xiongzenghui
+2016-08-03 18:51:32.539 Demos[37574:2366999] model.price = 300
+```
+
+```objc
+- (void)test8 {
+    KVCChildModel *model = [KVCChildModel new];
+    model.name = @"xiongzenghui";
+    model.price = 300;
+    
+    NSDictionary * dic = [model dictionaryWithValuesForKeys:@[@"name", @"price"]];
+    NSLog(@"dic = %@", dic);
+}
+```
+
+运行结果
+
+```
+2016-08-03 18:53:40.219 Demos[37700:2380520] dic = {
+    name = xiongzenghui;
+    price = 300;
+}
+```
+
+***
+
+###使用KVC替换TabBarController内部使用的TabBar、TabBarButton，完成不规则的TabBar样式
+
+> 此方法需要给不规则按钮项，添加一个对应的RootViewController实例。也可以不用添加一个RootViewController，只是作为一个触发事件源.
+
+###AppDelegate.m实例化TabBarController
+
+```
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    
+    UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.window = window;
+    
+    MyTabBarControlelr *tabVC= [[MyTabBarControlelr alloc] init];
+    self.window.rootViewController = tabVC;
+    
+    self.window.backgroundColor = [UIColor whiteColor];
+    [self.window makeKeyAndVisible];
+    
+    return YES;
+}
+```
+
+***
+
+
+###找到TabBarController在什么时刻完成向内部TabBar添加TabBarButton的时刻
+
+```objc
+@interface MyTabBarControlelr : UITabBarController
+
+@end
+```
+
+```objc
+#import "MyTabBarControlelr.h"
+#import <objc/message.h>
+
+@implementation MyTabBarControlelr
+
+- (void)viewWillAppear:(BOOL)animated {
+    
+    NSLog(@"viewWillAppear之前, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+        
+    [super viewWillAppear:animated];
+    
+    NSLog(@"viewWillAppear之后, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+}
+
+- (void)viewDidLoad {
+    
+    
+    NSLog(@"viewDidLoad之前, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+    
+    [super viewDidLoad];
+
+    [self setupChildViewControllers];
+    
+    NSLog(@"viewDidLoad之后, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+}
+
+- (void)setupChildViewControllers {
+    
+    UIViewController *vc1 = [[UIViewController alloc] init];
+    vc1.view.backgroundColor = [UIColor redColor];
+    vc1.tabBarItem.title=@"1";
+    
+    UIViewController *vc2 = [[UIViewController alloc] init];
+    vc2.view.backgroundColor = [UIColor blueColor];
+    vc2.tabBarItem.title=@"2";
+    
+    //用来在tabBar中间添加按钮的
+    UIViewController *vc3 = [[UIViewController alloc] init];
+    vc3.view.backgroundColor = [UIColor yellowColor];
+    //如果中间没有对应的ViewController，就不用添加
+    
+    UIViewController *vc4 = [[UIViewController alloc] init];
+    vc4.view.backgroundColor = [UIColor grayColor];
+    vc4.tabBarItem.title=@"4";
+    
+    UIViewController *vc5 = [[UIViewController alloc] init];
+    vc5.view.backgroundColor = [UIColor purpleColor];
+    vc5.tabBarItem.title=@"5";
+    
+    [self addChildViewController:vc1];
+    [self addChildViewController:vc2];
+    [self addChildViewController:vc3];
+    [self addChildViewController:vc4];
+    [self addChildViewController:vc5];
+}
+
+@end
+```
+
+控制台输出如下
+
+```
+2016-04-05 12:21:30.387 CustomTabBar[41675:155007] viewDidLoad之前, tabbarVC.tabbar = <UITabBar: 0x7fb3c86b4010; frame = (0 519; 320 49); autoresize = W+TM; layer = <CALayer: 0x7fb3c86b4340>>, tabbarVC.tabbar.subviews = (
+)
+2016-04-05 12:21:30.389 CustomTabBar[41675:155007] viewDidLoad之后, tabbarVC.tabbar = <UITabBar: 0x7fb3c86b4010; frame = (0 519; 320 49); autoresize = W+TM; layer = <CALayer: 0x7fb3c86b4340>>, tabbarVC.tabbar.subviews = (
+)
+2016-04-05 12:21:30.394 CustomTabBar[41675:155007] viewWillAppear之前, tabbarVC.tabbar = <UITabBar: 0x7fb3c86b4010; frame = (0 519; 320 49); autoresize = W+TM; layer = <CALayer: 0x7fb3c86b4340>>, tabbarVC.tabbar.subviews = (
+)
+2016-04-05 12:21:30.399 CustomTabBar[41675:155007] viewWillAppear之后, tabbarVC.tabbar = <UITabBar: 0x7fb3c86b4010; frame = (0 519; 320 49); autoresize = W+TM; layer = <CALayer: 0x7fb3c86b4340>>, tabbarVC.tabbar.subviews = (
+    "<UITabBarButton: 0x7fb3c8720060; frame = (2 1; 60 48); opaque = NO; layer = <CALayer: 0x7fb3c8721a50>>",
+    "<UITabBarButton: 0x7fb3c8724cb0; frame = (66 1; 60 48); opaque = NO; layer = <CALayer: 0x7fb3c8724b80>>",
+    "<UITabBarButton: 0x7fb3c8726010; frame = (130 1; 60 48); opaque = NO; layer = <CALayer: 0x7fb3c8726270>>",
+    "<UITabBarButton: 0x7fb3c87269a0; frame = (194 1; 60 48); opaque = NO; layer = <CALayer: 0x7fb3c8718500>>",
+    "<UITabBarButton: 0x7fb3c8727ec0; frame = (258 1; 60 48); opaque = NO; layer = <CALayer: 0x7fb3c8727790>>"
+)
+```
+
+
+可以得到如果执行`[super viewWillAppear:animated]`就会完成向TabBar添加TabBarButton。
+
+####小结
+
+- 在`viewDidLoad`时，
+	- TabBarController只会完成`添加TabBar`的工作
+	- 而不会完成`添加TabBarButton`的工作
+
+- 而在`viewWillAppear`时
+	- 执行`[super viewWillAppear:animated]`之后，TabBarController才会完成`添加TabBarButton`
+	- 因为完成添加TabBarButton的代码，是系统提供的父类完成的
+
+***
+
+###所以知道了TabBarButton被添加的时刻。那么我们可以在此刻，将系统的TabBar对象替换成我们自己的定义的TabBar对象，让系统将后续的TabBarButton，添加到我们替换的TabBar对象上。
+
+> 为什么要替换系统的UITabBar？ 因为系统的UITabBar对加上的UITabBarButton的布局frame是不能再修改的，也就是UITabBar里面的`layoutSunviews`方法无法控制器其执行。
+
+```objc
+#import <UIKit/UIKit.h>
+
+@interface MyTabBarControlelr : UITabBarController
+
+@end
+```
+
+```objc
+#import "MyTabBarControlelr.h"
+#import <objc/message.h>
+
+#import "MyTabBar.h"
+
+@interface MyTabBarControlelr ()
+
+@property (nonatomic, strong) MyTabBar *myTabBar;
+
+@end
+
+@implementation MyTabBarControlelr
+
+- (MyTabBar *)myTabBar {
+    if (!_myTabBar) {
+        _myTabBar = [[MyTabBar alloc] init];
+    }
+    return _myTabBar;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    
+    NSLog(@"viewWillAppear之前, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+    
+    // 替换掉系统使用的tabBar
+    {
+        //2.1 使用KVC替换（会编译成如下消息代码）
+        [self setValue:self.myTabBar forKeyPath:@"tabBar"];
+    
+        //2.2 直接使用消息代码，向当前控制器对象，发送一个消息，寻找SEL为@selector(setTabBar:)的方法实现
+        //objc_msgSend(self, @selector(setTabBar:), self.myTabBar);
+    }
+    
+    [super viewWillAppear:animated];
+    
+    NSLog(@"viewWillAppear之后, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+}
+
+- (void)viewDidLoad {
+    
+    
+    NSLog(@"viewDidLoad之前, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+    
+    [super viewDidLoad];
+
+    [self setupChildViewControllers];
+    
+    NSLog(@"viewDidLoad之后, tabbarVC.tabbar = %@, tabbarVC.tabbar.subviews = %@\n", self.tabBar, self.tabBar.subviews);
+}
+
+- (void)setupChildViewControllers {
+    
+    UIViewController *vc1 = [[UIViewController alloc] init];
+    vc1.view.backgroundColor = [UIColor redColor];
+    vc1.tabBarItem.title=@"1";
+    
+    UIViewController *vc2 = [[UIViewController alloc] init];
+    vc2.view.backgroundColor = [UIColor blueColor];
+    vc2.tabBarItem.title=@"2";
+    
+    //用来在tabBar中间添加按钮的
+    UIViewController *vc3 = [[UIViewController alloc] init];
+    vc3.view.backgroundColor = [UIColor yellowColor];
+    //如果中间没有对应的ViewController，就不用添加
+    
+    UIViewController *vc4 = [[UIViewController alloc] init];
+    vc4.view.backgroundColor = [UIColor grayColor];
+    vc4.tabBarItem.title=@"4";
+    
+    UIViewController *vc5 = [[UIViewController alloc] init];
+    vc5.view.backgroundColor = [UIColor purpleColor];
+    vc5.tabBarItem.title=@"5";
+    
+    [self addChildViewController:vc1];
+    [self addChildViewController:vc2];
+    [self addChildViewController:vc3];
+    [self addChildViewController:vc4];
+    [self addChildViewController:vc5];
+}
+
+@end
+```
+
+
+***
+
+###修改`MyTabBarControlelr`，之前创建child controllers的代码，中间添加一个controller，这个控制器的item用来完成在tabBar上中间位置，添加不规则按钮
+
+
+```
+- (void)setupChildViewControllers {
+    
+    UIViewController *vc1 = [[UIViewController alloc] init];
+    vc1.view.backgroundColor = [UIColor redColor];
+    vc1.tabBarItem.title=@"1";
+    
+    UIViewController *vc2 = [[UIViewController alloc] init];
+    vc2.view.backgroundColor = [UIColor blueColor];
+    vc2.tabBarItem.title=@"2";
+    
+    //修改，用来在tabBar中间添加按钮的
+    UIViewController *vc3 = [[UIViewController alloc] init];
+    vc3.view.backgroundColor = [UIColor yellowColor];
+    
+    UIViewController *vc4 = [[UIViewController alloc] init];
+    vc4.view.backgroundColor = [UIColor grayColor];
+    vc4.tabBarItem.title=@"4";
+    
+    UIViewController *vc5 = [[UIViewController alloc] init];
+    vc5.view.backgroundColor = [UIColor purpleColor];
+    vc5.tabBarItem.title=@"5";
+    
+    [self addChildViewController:vc1];
+    [self addChildViewController:vc2];
+    [self addChildViewController:vc3];
+    [self addChildViewController:vc4];
+    [self addChildViewController:vc5];
+}
+```
+
+###接下来去我们自己定义的MyTabBar类，重写系统布局方法，在TabBar上添加一个自己的UIButton，并设置frame显示.
+
+```
+#import "MyTabBar.h"
+
+@interface MyTabBar ()
+
+/**
+ *  添加在TabBar中间位置的不规则按钮
+ */
+@property (nonatomic, strong) UIButton *middleButton;
+
+@end
+```
+
+```
+@implementation MyTabBar
+
+- (UIButton *)middleButton {
+    if (!_middleButton) {
+        
+        _middleButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [_middleButton addTarget:self action:@selector(middleClick:) forControlEvents:UIControlEventTouchUpInside];
+        
+        UIImage *img = [UIImage imageNamed:@"middle"];
+        [_middleButton setImage:img forState:UIControlStateNormal];
+        
+        //让按钮的大小随背景图片大小
+        [_middleButton sizeToFit];
+    }
+    return _middleButton;
+}
+
+- (void)layoutSubviews {
+    
+    //1. 先执行系统UITabbar的布局UITabBarButton的代码
+    [super layoutSubviews];
+    
+    //2. 完成按钮添加布局
+    CGFloat imageH = self.middleButton.currentImage.size.height;
+    CGFloat imageW = self.middleButton.currentImage.size.width;
+    CGFloat topInset = imageH - self.bounds.size.height;
+    
+    //将不规则按钮添加到TabBar中间的位置
+    [self addSubview:self.middleButton];
+    
+    self.middleButton.frame = CGRectMake(CGRectGetMidX(self.bounds) - imageW/2.0,
+                                         -topInset,
+                                         imageW,
+                                         imageH);
+    
+}
+
+
+- (void)middleClick:(id)sender {
+    
+}
+
+@end
+```
+
+
+****
+
+###对上述代码继续优化，当在TabBar添加中间的按钮时，但是不需要多一个UIViewController
+
+####第一处修改、`MyTabBarControlelr`去掉添加中间item对应的ViewController
+
+```
+@implementation MyTabBarControlelr
+
+- (void)setupChildViewControllers {
+    
+    UIViewController *vc1 = [[UIViewController alloc] init];
+    vc1.view.backgroundColor = [UIColor redColor];
+    vc1.tabBarItem.title=@"1";
+    
+    UIViewController *vc2 = [[UIViewController alloc] init];
+    vc2.view.backgroundColor = [UIColor blueColor];
+    vc2.tabBarItem.title=@"2";
+    
+    //用来在tabBar中间添加按钮的
+//    UIViewController *vc3 = [[UIViewController alloc] init];
+//    vc3.view.backgroundColor = [UIColor yellowColor];
+    //如果中间没有对应的ViewController，就不用添加
+    
+    UIViewController *vc4 = [[UIViewController alloc] init];
+    vc4.view.backgroundColor = [UIColor grayColor];
+    vc4.tabBarItem.title=@"4";
+    
+    UIViewController *vc5 = [[UIViewController alloc] init];
+    vc5.view.backgroundColor = [UIColor purpleColor];
+    vc5.tabBarItem.title=@"5";
+    
+    [self addChildViewController:vc1];
+    [self addChildViewController:vc2];
+//    [self addChildViewController:vc3];
+    [self addChildViewController:vc4];
+    [self addChildViewController:vc5];
+}
+
+@end
+```
+
+####第二处修改、`MyTabBar`，优化布局所有的tabBarButton
+
+
+```objc
+#import <UIKit/UIKit.h>
+
+@interface RDTabBar : UITabBar
+
+@end
+```
+
+```objc
+#import "RDTabBar.h"
+
+@interface RDTabBar ()
+
+@property (nonatomic, strong) UIButton *middleButton;
+
+@end
+
+@implementation RDTabBar
+
+- (UIButton *)middleButton {
+    if (!_middleButton) {
+        
+        _middleButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [_middleButton addTarget:self action:@selector(middleClick:) forControlEvents:UIControlEventTouchUpInside];
+        
+        UIImage *img = [UIImage imageNamed:@"tabBar_publish_icon"];
+        [_middleButton setImage:img forState:UIControlStateNormal];
+        
+        //让按钮的大小随背景图片大小
+        [_middleButton sizeToFit];
+    }
+    return _middleButton;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self layoutOtherNomalItem];
+    [self layoutMiddleButton];
+}
+
+- (void)layoutOtherNomalItem {
+    
+    CGFloat x = 0;
+    CGFloat y = 0;
+    CGFloat w = self.bounds.size.width / (self.items.count + 1);
+    CGFloat h = self.bounds.size.height;
+    
+    NSInteger middleIndex = (self.items.count + 1) / 2;
+    
+    NSInteger index = 0;
+    
+    for (UIView *subView in self.subviews) {
+        if ([subView isKindOfClass:NSClassFromString(@"UITabBarButton")]) {
+            CGRect frame = CGRectMake(x + index * w,
+                                      y,
+                                      w,
+                                      h);
+            subView.frame = frame;
+            index++;
+            if (index == middleIndex) {
+                index++;
+            }
+        }
+    }
+}
+
+- (void)layoutMiddleButton {
+    
+    CGFloat imageH = self.middleButton.currentImage.size.height;
+    CGFloat imageW = self.middleButton.currentImage.size.width;
+    CGFloat topInset = imageH - self.bounds.size.height;
+    
+    [self addSubview:self.middleButton];
+    
+    self.middleButton.frame = CGRectMake(CGRectGetMidX(self.bounds) - imageW/2.0,
+                                         -topInset,
+                                         imageW,
+                                         imageH);
+}
+
+- (void)middleClick:(id)sender {
+    
+}
+
+@end
+```
+
+如上就是不需要给中间按钮添加一个对应的UIViewController对象到TabBarController的实现.

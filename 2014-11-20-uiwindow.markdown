@@ -1,0 +1,666 @@
+---
+layout: post
+title: "UIWindow"
+date: 2014-11-20 17:21:06 +0800
+comments: true
+categories: 
+---
+
+
+###UIScreen、UIWindow、UIView三者之间的关系
+
+- (1) UIScreen为`硬件设备`的屏幕抽象，其中一个属性是整个屏幕区域bounds
+
+- (2) UIWindow为`内容显示`提供背景平台，一个App程序必须至少要有一个UIWindow，否则不会显示任何的东西
+
+```objc
+NS_CLASS_AVAILABLE_IOS(2_0) @interface UIWindow : UIView
+
+.....
+
+@end
+```
+
+可以看到UIWindow继承自UIView，所以可以将其看做成一个UI控件使用即可。
+
+```objc
+window1 = [[UIWindow alloc] init];
+window1.backgroundColor = [UIColor redColor];
+window1.rootViewController = [[UIViewController alloc] init];
+window1.frame = CGRectMake(20, 70, 200, 200);
+window1.hidden = NO;	//或者 [window1 makeKeyAndVisible];
+[window1 addSubview:[UIView new]]; 
+```
+
+- (3) UIView负责绝大部分的内容描画，并负责响应用户的交互、管理子视图，最终被添加到UIWindow上进行显示
+
+
+通常我们在一个`-[UIViewController.view addSubviews:]`添加很多UIView对象时，其实最终会自动被添加到所在的`keyWindow`上进行显示.
+
+```
+- UIScreen 屏幕对象 选取一个window进行显示，并作为主事件keyWindow
+	- UIWindow for `状态栏`
+		- root view controller
+			- subview 1
+			- subview 2
+			- .....
+	- UIWindow for `键盘输入`
+		- root view controller
+			- subview 1
+			- subview 2
+			- .....
+	- UIWindow for `Alert弹框`
+		- root view controller
+			- subview 1
+			- subview 2
+			- .....
+	- UIWindow for `我们自己创建的各种Window`
+		- root view controller
+			- subview 1
+			- subview 2
+			- .....
+```
+
+
+###从main.m开始
+
+```
+int main(int argc, char * argv[]) {
+    @autoreleasepool {
+        return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+    }
+}
+```
+
+- 完成创建`UIApplication`对象，来表示一个App程序运行
+- 创建`UIApplicationDelegate`对象，作为`UIApplication`对象状态改变时回调的对象
+- 创建`Main NSRunLopp`，负责整个App进程的事件接收
+
+***
+
+###然后就会执行Appdelegate实例的回调方法，告诉我们`UIApplication已经创建完毕`
+
+
+如下是一个AppDelegate如何完成UIWindow、RootViewController的步骤demo
+
+```
+@implementation AppDelegate
+
+#pragma mark - UIApplicationDelegate 实现方法
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    
+    //1. UIApplication实例创建完毕
+    NSLog(@"application = %@\n", application);
+    
+    //2. 创建一个UIWdinwo实例
+    UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    NSLog(@"windowLevel = %lf\n", window.windowLevel);
+    
+    //3. 将创建出来的Window实例，设置为UIApplication实例的window
+    //其实这里是通过设置给AppDelegate完成
+    self.window = window;
+    
+    //4. 虽然给AppDelegate添加了一个window，完成间接给UIApplication添加了一个window
+    //但是UIApplication仍然没有一个keyWindow，也就是可见的window
+    NSLog(@"appdelegate.keyWindow = %@\n", application.keyWindow);
+    
+    //5. 那么让添加到UIApplication的window，成为可见的窗口
+    [self.window setWindowLevel:3000.0];
+    [self.window makeKeyAndVisible];
+    
+    //6. 设置keyWindow的背景色
+    self.window.backgroundColor = [UIColor whiteColor];
+    
+    //7. 再看UIApplication是否有keyWindow
+    NSLog(@"appdelegate.keyWindow = %@\n", application.keyWindow);
+    
+    //8. 再看keyWindow的level
+    NSLog(@"windowLevel = %lf\n", self.window.windowLevel);
+    
+    //9. 设置keyWindow的rootViewController
+    UIViewController *vc = [[UIViewController alloc] init];
+    self.window.rootViewController = vc;
+    
+    return YES;
+}
+
+//....
+
+@end
+```
+
+打印结果
+
+```
+2015-09-04 21:33:10.271 UICodes[17470:269909] application = <UIApplication: 0x7f95b9c04550>
+2015-09-04 21:33:10.285 UICodes[17470:269909] windowLevel = 0.000000
+2016-09-04 21:33:10.285 UICodes[17470:269909] appdelegate.keyWindow = (null)
+2015-09-04 21:33:10.287 UICodes[17470:269909] appdelegate.keyWindow = <UIWindow: 0x7f95b9e38630; frame = (0 0; 375 667); gestureRecognizers = <NSArray: 0x7f95b9d19410>; layer = <UIWindowLayer: 0x7f95b9e1c740>>
+2015-09-04 21:33:10.287 UICodes[17470:269909] windowLevel = 3000.000000
+
+```
+
+对如上代码总结
+	
+- 1、最终显示元素，依赖一个`keyWindow`
+	
+- 2、让一个normalWindow可见，必须执行`-[UIWindow makeKeyAndVisible]`（错误的）
+
+这样既让window可见，但是又称为了keyWindow，但是有时候可能只需要让window显示而已:
+
+```objc
+_myWindow = [[UIWindow alloc] initWithFrame:CGRectMake(20, 80, 100, 100)];
+_myWindow.backgroundColor = [UIColor redColor];
+
+//让其显示
+_myWindow.hidden = NO;
+```
+	
+- 3、`keyWindow`.level = `normalWindow`.level = 0.0
+	
+- 4、UIWindow实例，是通过我们设置给`AppDelegate单例`，达到间接的设置给UIApplication实例
+
+- 5、UIApplication会读取AppDelegate实例的window属性指向的UIWindow实例
+
+***
+
+###图示: UIApplication、AppDelegate、UIWindow、UIViewController之间的关系
+
+![](http://i5.tietuku.com/6091b49f911305f8.png)
+
+***
+
+###UIWindowLevel是系统规定出的window的三个级别
+
+- (1) Normal = 0
+
+```
+UIKIT_EXTERN const UIWindowLevel UIWindowLevelNormal; 
+```
+
+- (2) StatusBar = 1000
+
+```
+UIKIT_EXTERN const UIWindowLevel UIWindowLevelStatusBar;
+```
+
+- (3) Alert = 2000
+
+```
+UIKIT_EXTERN const UIWindowLevel UIWindowLevelAlert; 
+```
+
+从上面三个值可以看出，三个级别的大小
+
+```
+Alert > StatusBar > Normal
+```
+
+而UIApplication实例，是根据`-[UIWindow windowLevel]`值的大小来排序显示，值`越大`就显示在越靠`上面`	
+
+我们还可以任意指定一个window的level
+
+```objc
+[window setWindowLevel:9999.0];
+```
+
+***
+
+###UIWindow`状态发生变化`时，发出如下对应的系统通知
+
+
+```objc
+//成为可见
+UIKIT_EXTERN NSString *const UIWindowDidBecomeVisibleNotification; // nil
+
+//成为隐藏
+UIKIT_EXTERN NSString *const UIWindowDidBecomeHiddenNotification;  // nil
+
+//成为主事件窗口
+UIKIT_EXTERN NSString *const UIWindowDidBecomeKeyNotification;     // nil
+
+//失去成为主事件窗口
+UIKIT_EXTERN NSString *const UIWindowDidResignKeyNotification;     // nil
+```
+
+****
+
+###获取window的几种方法
+
+主要获取window的方式
+
+- (1) `[UIApplication sharedApplication].keyWindow` 
+- (2) `[UIApplication sharedApplication].windows` 
+- (3) `[UIApplication sharedApplication].delegate.window`
+
+`[UIApplication sharedApplication].keyWindow` >>>>>> `国家主席`
+
+- 记录当前App程序唯一的一个能够`接收事件`的主窗口
+- 记录的窗口是App程序的`所有子窗口`中，`最牛逼`的一个`主事件窗口`
+- iOS并没有提供一种叫做keyWindow的api类，所以window创建的时候，都是一样的
+- 而是在App程序内`所有的window`中选出一个window，作为App程序的的`keyWindow`
+- 注意，避免直接使用`[UIApplication sharedApplication].keyWindow`，因为很有可能是`系统的window`，而不是我们自己的window
+	- Status Bar Window
+	- UItextFiled Keyboard Window
+	- Alert Window
+	- .....等等系统window
+
+`[UIApplication sharedApplication].windows` >>>>>> `候选者`
+	
+- 记录了App程序的所有的`候选window`
+- 一旦某个UIView实例所在的windiw被系统推选为keyWindow，那么就`成功竞选成国家主席`
+- 任何UIWindow不是一开始就是`keyWindow`，最开始都是`normalWindow`。只是`某一个Window内部UIView实例触发事件`时，然后系统将这个`window`提升为`主事件keyWindow`。
+
+`[UIApplication sharedApplication].delegate.window` >>> App程序创建时创建的`root window`
+
+- 获取的永远都是单例window，并且是App程序的`主window`
+
+***
+
+###UIApplication实例，添加多个UIWindow，并作为`keyWindow`
+
+```
+static UIWindow *window1;
+static UIWindow *window2;
+static UIWindow *window3;
+
+@implementation AppDelegate
+
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+{
+    //主Window
+    UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.window = window;
+    self.window.backgroundColor = [UIColor grayColor];
+    HomePage_RootViewController *vc = [[HomePage_RootViewController alloc] init];
+    vc.title = @"HomePage";
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    self.window.rootViewController = nav;
+    [self.window makeKeyAndVisible];
+    
+    //window1
+    window1 = [[UIWindow alloc] init];
+    window1.backgroundColor = [UIColor redColor];
+    window1.rootViewController = [[UIViewController alloc] init];
+    window1.origin = CGPointMake(5, 70);
+    window1.width = 180;
+    window1.height = 180;
+    [window1 makeKeyAndVisible];
+    
+    //window2
+    window2 = [[UIWindow alloc] init];
+    window2.backgroundColor = [UIColor blueColor];
+    window2.rootViewController = [[UIViewController alloc] init];
+    window2.origin = CGPointMake(50, 180);
+    window2.width = 180;
+    window2.height = 180;
+    [window2 makeKeyAndVisible];
+    
+    //window3
+    window3 = [[UIWindow alloc] init];
+    window3.backgroundColor = [UIColor yellowColor];
+    window3.rootViewController = [[UIViewController alloc] init];
+    window3.origin = CGPointMake(100, 100);
+    window3.width = 180;
+    window3.height = 180;
+    [window3 makeKeyAndVisible];
+    
+    return YES;
+}
+```
+
+![](http://i2.buimg.com/4851/ac1dad4a6dbb5bfb.png)
+
+可以看到，`越晚执行makeKeyAndVisible`方法出现在`最上面`显示，但实际上是因为window对象被创建的顺序，也就是添加到UIApplication对象的顺序。
+
+上面代码中我们并没使用`-[UIApplication addWindow:]`这样类似的代码，就只是创建了UIWindow对象，然后执行`-[UIWindow makeKeyAndVisible]`就显示出来了。也就是说`-[UIWindow makeKeyAndVisible]`就相当于`-[UIApplication addWindo w:]`。那么`最晚`执行`addWindow:`的自然就在`最上面`。
+
+```objc
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+{
+    //主Window
+    self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.window.backgroundColor = [UIColor grayColor];
+    UIViewController *vc = [[UIViewController alloc] init];
+    vc.title = @"HomePage";
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    self.window.rootViewController = nav;
+    [self.window makeKeyAndVisible];
+    
+    //window1 redColor
+    window1 = [[UIWindow alloc] init];
+    window1.backgroundColor = [UIColor redColor];
+    window1.rootViewController = [[UIViewController alloc] init];
+    window1.frame = CGRectMake(20, 70, 200, 200);
+
+    //window2 blueColor
+    window2 = [[UIWindow alloc] init];
+    window2.backgroundColor = [UIColor blueColor];
+    window2.rootViewController = [[UIViewController alloc] init];
+    window2.frame = CGRectMake(100, 100, 200, 200);
+    
+    //window3 yellowColor
+    window3 = [[UIWindow alloc] init];
+    window3.backgroundColor = [UIColor yellowColor];
+    window3.rootViewController = [[UIViewController alloc] init];
+    window3.frame = CGRectMake(80, 200, 200, 200);
+    
+    // 改变添加window的顺序
+    [window3 makeKeyAndVisible];
+    [window2 makeKeyAndVisible];
+    [window1 makeKeyAndVisible];
+    
+    // 打印windows
+    NSLog(@"application.windows = %@", [UIApplication sharedApplication].windows);
+    NSLog(@"application.keyWindow = %@", [UIApplication sharedApplication].keyWindow);
+    
+    return YES;
+}
+```
+
+![](http://i2.buimg.com/4851/7689780a39d6ac2e.png)
+
+最晚执行makeKeyAndVisible的红色window，显示在最上面。
+
+***
+
+###`winodw.hide = NO`也是可以显示window，完成将window添加到application
+
+```objc
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+{
+    //主Window
+    self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.window.backgroundColor = [UIColor grayColor];
+    UIViewController *vc = [[UIViewController alloc] init];
+    vc.title = @"HomePage";
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    self.window.rootViewController = nav;
+    [self.window makeKeyAndVisible];
+    
+    //window1 redColor
+    window1 = [[UIWindow alloc] init];
+    window1.backgroundColor = [UIColor redColor];
+    window1.rootViewController = [[UIViewController alloc] init];
+    window1.frame = CGRectMake(20, 70, 200, 200);
+
+    //window2 blueColor
+    window2 = [[UIWindow alloc] init];
+    window2.backgroundColor = [UIColor blueColor];
+    window2.rootViewController = [[UIViewController alloc] init];
+    window2.frame = CGRectMake(100, 100, 200, 200);
+    
+    //window3 yellowColor
+    window3 = [[UIWindow alloc] init];
+    window3.backgroundColor = [UIColor yellowColor];
+    window3.rootViewController = [[UIViewController alloc] init];
+    window3.frame = CGRectMake(80, 200, 200, 200);
+    
+//    [window3 makeKeyAndVisible];
+//    [window2 makeKeyAndVisible];
+//    [window1 makeKeyAndVisible];
+    
+//    window3.hidden = NO;
+//    window2.hidden = NO;
+//    window1.hidden = NO;
+    
+    window1.hidden = NO;
+    window2.hidden = NO;
+    window3.hidden = NO;
+    
+    // 打印windows
+    NSLog(@"application.windows = %@", [UIApplication sharedApplication].windows);
+    NSLog(@"application.keyWindow = %@", [UIApplication sharedApplication].keyWindow);
+    
+    return YES;
+}
+```
+
+![](http://i2.buimg.com/4851/da3814e23a7ef9dc.png)
+
+可以看到和之前makeKeyAndVisble的效果一样的，但是并不是keyWindow。
+
+```objc
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+{
+    //主Window
+    self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.window.backgroundColor = [UIColor grayColor];
+    UIViewController *vc = [[UIViewController alloc] init];
+    vc.title = @"HomePage";
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    self.window.rootViewController = nav;
+    [self.window makeKeyAndVisible];
+    
+    //window1 redColor
+    window1 = [[UIWindow alloc] init];
+    window1.backgroundColor = [UIColor redColor];
+    window1.rootViewController = [[UIViewController alloc] init];
+    window1.frame = CGRectMake(20, 70, 200, 200);
+
+    //window2 blueColor
+    window2 = [[UIWindow alloc] init];
+    window2.backgroundColor = [UIColor blueColor];
+    window2.rootViewController = [[UIViewController alloc] init];
+    window2.frame = CGRectMake(100, 100, 200, 200);
+    
+    //window3 yellowColor
+    window3 = [[UIWindow alloc] init];
+    window3.backgroundColor = [UIColor yellowColor];
+    window3.rootViewController = [[UIViewController alloc] init];
+    window3.frame = CGRectMake(80, 200, 200, 200);
+    
+//    [window3 makeKeyAndVisible];
+//    [window2 makeKeyAndVisible];
+//    [window1 makeKeyAndVisible];
+    
+    window3.hidden = NO;
+    window2.hidden = NO;
+    window1.hidden = NO;
+    
+//    window1.hidden = NO;
+//    window2.hidden = NO;
+//    window3.hidden = NO;
+    
+    // 打印windows
+    NSLog(@"application.windows = %@", [UIApplication sharedApplication].windows);
+    NSLog(@"application.keyWindow = %@", [UIApplication sharedApplication].keyWindow);
+    
+    return YES;
+}
+```
+
+![](http://i4.buimg.com/4851/05572e49b04d4b2f.png)
+
+****
+
+###`-[UIView window]`获取的window不一定是`keyWindow`，而是view当前所在window
+
+- 当前`UIView实例所在window`，如果刚好是keyWindow，那么调用次方返回的就是keyWindow
+
+- 如果UIView实例是`键盘View`的某一个subview，那么通过`view.window`返回的就是`键盘的window`，而并非`keyWindow`
+
+
+###查找当前App程序中的`主事件keyWindow`的代码
+
+```objc
+@interface UIWindow (Tools)
+
++ (UIWindow *)findKeyWindow {
+    
+    //逆序遍历 当前应用程序的`所有的UIWindow实例`，然后依次找出keyWindow
+    NSEnumerator *frontToBackWindows = [UIApplication.sharedApplication.windows reverseObjectEnumerator];
+    
+    //记录找到的keyWindow实例
+    UIWindow *keyWindow = nil;
+    
+    //遍历当前App所有的UIWindow对象
+    for (UIWindow *window in frontToBackWindows){
+        
+        //条件1. 是否处于当前主屏幕
+        BOOL windowOnMainScreen = window.screen == UIScreen.mainScreen;
+        
+        //条件2. 屏幕是否可见
+        BOOL windowIsVisible = !window.hidden && window.alpha > 0;
+        
+        //条件3. 屏幕的优先级为normal（排除AlertView所在的Window、排除StatusBar所在的Window）
+        BOOL windowLevelNormal = window.windowLevel == UIWindowLevelNormal;
+        
+        /*
+         Window有三个优先级
+         
+         排序: Normal < StatusBar < Alert
+         
+         1. Level层级相同的时候，只有第一个设置为KeyWindow的显示出来 [window makeKeyAndVisible]
+         2. Level层级不相同的时候，最高Level的始终显示在最前面
+         
+         UIKIT_EXTERN const UIWindowLevel UIWindowLevelNormal;
+         UIKIT_EXTERN const UIWindowLevel UIWindowLevelAlert;
+         UIKIT_EXTERN const UIWindowLevel UIWindowLevelStatusBar;
+         */
+        
+        //找到正常显示的Window
+        if (windowOnMainScreen && windowIsVisible && windowLevelNormal) {
+            keyWindow = window;
+            break;
+        }
+    }
+    
+    return keyWindow;
+}
+
+@end
+```
+
+###获取`当前显示`的UIViewController
+
+- 第一步、找到找到接收事件的主窗口 -- keyWindow
+- 第二步、获取keyWindow 的 rootVIewController
+
+```
+- (UIViewController *)getCurrentVC  
+{  
+    UIViewController *result = nil;  
+       
+    //第一步、找到接收事件的主窗口
+    UIWindow * window = [[UIApplication sharedApplication] keyWindow];  
+   
+    if (window.windowLevel != UIWindowLevelNormal)  
+    {  
+        NSArray *windows = [[UIApplication sharedApplication] windows];  
+        
+        for(UIWindow * tmpWin in windows)  
+        {  
+            if (tmpWin.windowLevel == UIWindowLevelNormal)  
+            {  
+                window = tmpWin;  
+                break;  
+            }  
+        }  
+    }  
+   	
+   	//第二步、 根据主事件窗口内的subview，找到当前屏幕出现的控制器对象
+   	
+    //1. 取出window上所有subviews中的`最上面`的一个subview   
+    UIView *frontView = [[window subviews] objectAtIndex:0];  
+    
+    //2. subview是否有下一个事件处理对象
+    id nextResponder = [frontView nextResponder];  
+       
+    //3. 根据有没有下一个事件处理对象，来判断返回哪一个viewController
+    if ([nextResponder isKindOfClass:[UIViewController class]]) {
+    
+    	//3.1 找到了subview的事件处理对象UIViewController，将找到的这个控制器对象返回
+        result = nextResponder;  
+        
+	} else {
+	
+		//3.2 未找到susbview的事件处理对象，那么将window.rootViewController作为找到的控制器对象返回
+        result = window.rootViewController;  
+	}
+       
+    return result;  
+}
+```
+
+***
+
+###最上层的UIWindow是: `UITextEffectsWindow`
+
+```
+id window = [[UIApplication sharedApplication].windows lastObject];
+```
+
+***
+
+###最终显示UI的容器是UIWindow
+
+- 系统将UIViewController实例内部的UIView实例及所有subviews，全部复制到当前接收时间的keyWindow上进行显示
+
+
+- 举例: UITableViewController、UINavigationController如何显示在UIWindow的
+
+![](http://i12.tietuku.com/b6478850ece2edc7.png)
+
+- UINavigationController实例的UIView提供
+	- 提供两个UI控件，并且添加到`UITableView`上
+		- 顶部导航栏 UINavigationBar
+		- 底部工具栏 UIToolBar
+	- 提供两个栈结构
+		- UIViewController实例栈
+		- UITabBarButtonItem实例栈
+
+- UITableViewController
+	- 将内部的UITableView实例，添加到`UIWindow`实例上
+	- iOS7后，以window的左上角`(0,0)`为坐标系原点
+	- 如果将某些UI添加到`UITableView上的最顶部`，以`(0,0)`为坐标系原点
+		- 但是会随着UITableView滚动一起滚动
+
+- 而UINavigationBar、UIToolBar、UITableView
+	- 最终都是添加到 `UIViewController实例的UIView实例` 中
+	- UITableViewController是继承自UIViewController，只是多了一个UITableView和实现了UITableViewDelegate和UITableViewDataSource的方法
+
+- 最后负责显示所有UI控件的容器
+	- UIWindow实例
+	- 并且是keyWindow当前显示的、接收事件的主窗口
+	- 将UIViewController实例的UIView实例中的，所有的subviews，都复制添加到keyWindow进行显示、接收事件
+
+	
+****
+
+###将一个View插入到一个superView上如下四种方法
+
+```
+//1. 添加到最上面
+addSubview:
+
+//2. 添加到指定层次
+insertSubview:atIndex:
+
+//3. 将subview调整 或 添加 到最上面
+insertSubview:aboveSubview:
+
+//4. 将subview调整 或 添加 到最下面
+insertSubview:belowSubview:
+```
+
+比如、将UILabel添加到导航栏控制器navigationBar的下面
+
+```
+- (void)setupTopLabel {
+    
+    _label = [[UILabel alloc] init];
+    _label.font = [UIFont systemFontOfSize:17.f];
+    _label.backgroundColor = [UIColor redColor];
+    
+    _label.originX = 0;
+    _label.width = [UIScreen mainScreen].bounds.size.width;
+    _label.height = 44;
+    _label.originY = 64 - _label.height;
+    
+    //将UILabel添加到导航栏控制器navigationBar的下面
+    [self.navigationController.view insertSubview:_label belowSubview:self.navigationController.navigationBar];
+}
+```
+

@@ -1,0 +1,3329 @@
+---
+layout: post
+title: "Weibo"
+date: 2014-12-20 14:51:04 +0800
+comments: true
+categories: 
+---
+
+###自己模仿Sina Weibo做了一个Demo，记录一下。
+
+***
+
+###使用CocoaPods导入第三方的框架
+
+```
+#自动布局
+pod 'Masonry'				
+
+#依赖注入
+pod 'Objection'
+
+#图片
+pod 'SDWebImage'
+
+#网络
+pod 'AFNetworking'
+
+#保密存储
+pod 'SSKeychain'
+
+#Aop
+pod 'Aspects'
+
+#JSON Model
+pod 'NSObject-ObjectMap'
+
+#CoreData
+pod 'ObjectiveRecord'
+
+#TabBar
+pod 'RDVTabBarController'
+```
+
+***
+
+###首先规划一下项目的目录结构
+
+- `Classes`目录
+		
+	- `AppStart`目录
+		- AppDelegate
+		- main.m
+
+	- `AppConfig`目录
+		- 存放App配置相关的文件
+
+	- `Controllers`
+		- Login
+			- ViewController目录
+			- Subviews目录
+		- Regist
+			- ViewController目录
+			- Subviews目录
+	
+	- `BaseClass`目录
+		- 存放一些提供基础公共代码的`父类`
+		- BaseViewController
+		- BaseTableViewController
+		- BaseCell
+		- BaseViewModel
+
+	- `Network`目录
+		- Login目录
+			- LoginRequest
+		- Regist目录
+			- RegistRequest
+
+	- `EntityModel`目录
+		- 存放实体类模型
+		- EntityCustomer
+		- EntityXxx
+
+	- `EntityPersistent`目录
+		- 完成实体类对象与数据库表映射的框架类库
+		- 1) 基于CoreData封装，优先这种
+		- 2) 基于FMDB封装
+
+	- `Modules`目录
+		- 用于使用`Objection`将`业务接口`与`业务实现`关联起来的module
+		- ViewControllerModule目录， 管理控制器抽象
+		- BusinessViewModelModule目录，管理ViewModel抽象
+		- 等等..
+
+	- `BusinessViewModel`目录
+		- 业务模块1目录
+			- `Interface`目录，`抽象接口`
+			- `Implementation`目录，`接口具体实现`
+		- 业务模块2目录
+			- Interface目录，抽象接口
+			- Implementation目录，接口具体实现
+		- 业务模块3目录
+			- Interface目录，抽象接口
+			- Implementation目录，接口具体实现
+
+	- Tools目录
+		- 存放一些工具类
+		- `Cache` 提供缓存相关功能
+		- 正则式
+		- 等等
+
+	- Categories目录
+		- 存放一些分类
+		- NSString分类
+		- NSObject分类
+		- UIView分类
+		- NSMutableArray分类
+		- 等等..
+
+	- Vender目录
+		- 存放一些SDK目录
+		- 腾讯SDK目录
+		- 微博SDK目录
+		- 支付SDK目录
+		- 等等...
+
+- Resources目录
+	- Weibo.xcdatamodeld
+	- Info.plist
+	- 其他各种资源文件
+
+****
+
+###整个应用程序从`main.m`开始，有必要总结下他干一些什么
+
+```
+#import <UIKit/UIKit.h>
+#import "AppDelegate.h"
+
+int main(int argc, char * argv[]) {
+    @autoreleasepool {
+        return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+    }
+}
+```
+
+####解析UIApplicationMain()
+
+- 函数的声明
+
+```
+int UIApplicationMain(int argc, char *argv[], NSString * __nullable principalClassName, NSString * __nullable delegateClassName)
+```
+
+- 该函数有4个参数是什么
+
+	- 参数1和参数2，是传入给main函数的参数，我们不用管
+	- 参数3，一般传入nil，系统会创建默认UIApplication类的实例。那么也就是说可以传入我们自己继承自UIApplication完成的子类。
+	- 参数4，传入一个UIApplication对象的代理对象，需要实现`UIApplicationDelegate`定义的抽象方法
+
+
+- 该函数做的事情
+
+	- 创建出一个`UIApplication`对象
+
+	- 将我们传入的`AppDelegate`类的实例，作为`UIApplication`的代理实现对象
+
+	- 启动`主事件运行循环`，并开始接收事件
+
+	- 加载info.plist文件，并判断是否加载`Main.storaboard`文件初始化.
+
+
+- 将开启的`主事件循环`放入到autoreleasepool，为了最后释放掉内部使用的对象及变量
+
+```
+@autoreleasepool {
+    return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+}
+```
+
+***
+
+###找到一个ituns里面App的图片资源
+
+- 打开ituns，下载一个App
+- 在ituns目录下，会得到一个`xxx.ipa`文件
+- 将`xxx.ipa`改成`xxx.rar`
+- 然后解压缩
+- 找到解压缩的文件目录中的`Payload/`下有一个文件，比如`weibo`
+- 然后对着这个文件`weibo`，右键`显示包内容`
+- 即可显示所有的图片资源
+
+****
+
+###iphone、ipad适配
+
+- Frame时代，使用`autoresizingMask`属性
+
+```
+enum {
+   UIViewAutoresizingNone                 = 0, //不设置自动调整
+   
+   UIViewAutoresizingFlexibleLeftMargin   = 1 << 0,//保证与superView【左】边的距离不变
+   UIViewAutoresizingFlexibleRightMargin  = 1 << 2,//保证与superView【右】边的距离不变
+   UIViewAutoresizingFlexibleTopMargin    = 1 << 3,//保证与superView【顶】部的距离不变
+   UIViewAutoresizingFlexibleBottomMargin = 1 << 5 //保证与superView【底】部的距离不变
+   
+   UIViewAutoresizingFlexibleWidth        = 1 << 1,//自动调整自己的宽度，保证与superView的【左边】和【右边】的距离不变
+   UIViewAutoresizingFlexibleHeight       = 1 << 4,//自动调整自己的高度，保证与superView的【顶部】和【底部】的距离不变
+};
+```
+
+- AutoLayout时代，给UIView设置`consrtaints`约束，但是只是针对`某一种类型`的设备的不同`屏幕方向`
+	- xib设置
+	- storaborad设置
+	- 代码设置、通过第三方框架`Masonry`等
+	- 问题: 无法一套代码，适配 iphone、ipad、itouch、iWatch...
+
+- `SizeClass + AutoLayout`可以更好的完成各种平台一套代码，到处运行
+	- `SizeClass`可以针对不同的`设备类型`、不同的`屏幕方向`来区分写UI布局
+	- `AutoLayout`来完成具体的`设备类型+屏幕方向`UI布局的代码编写
+
+![iphoneipad.jpg](http://imgchr.com/images/iphoneipad.jpg)
+
+****
+
+###新浪服务器OAuth授权
+
+- 第一步、OAuth得到code
+- 第二步、使用code获取AccessToken
+- 第三步、以后的所有接口请求带上AccessToken即可（代替用户名和密码）
+
+- 使用`UIWebView`加载H5页面，拦截到转发的URL，取出其中的code字段
+
+***
+
+###用于给定一个UIFont、`最大宽度、最大高度、一个区域`，来计算一段文字内容显示的size
+
+```
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+
+@interface NSString (Extension)
+
+/**
+ *  给定一个最大的宽高区域，计算文字的显示的大小
+ */
+- (CGSize)sizeWithFont:(UIFont*)font maxSize:(CGSize)maxSize;
+
+/**
+ *  给地一个最大的宽度，计算文字的显示的大小，适用于Label字典换行时
+ */
+- (CGSize)sizeWithfont:(UIFont*)font MaxWith:(CGFloat)maxWith;
+
+/**
+ *  不限制宽度、不限制高度，来计算文字的显示的大小，适用于比较小的文字显示
+ */
+- (CGSize)sizeWithfont:(UIFont*)font;
+
+@end
+```
+
+```
+#import "NSString+Extension.h"
+
+@implementation NSString (Extension)
+
+- (CGSize)sizeWithFont:(UIFont *)font maxSize:(CGSize)maxSize;
+{
+    //1.
+    NSDictionary *attrs = @{
+                            NSFontAttributeName : font
+                            };
+    
+    //2.
+    NSStringDrawingOptions options = NSStringDrawingUsesLineFragmentOrigin| \
+                                        NSStringDrawingTruncatesLastVisibleLine| \
+                                        NSStringDrawingUsesDeviceMetrics| \
+                                        NSStringDrawingUsesFontLeading;
+    //3.
+    CGSize size = [self boundingRectWithSize:maxSize
+                                     options:options
+                                  attributes:attrs
+                                     context:nil].size;
+    
+    return size;
+}
+
+- (CGSize)sizeWithfont:(UIFont*)font MaxWith:(CGFloat)maxWith
+{
+    //1.
+    NSDictionary *attrs = @{
+                            NSFontAttributeName : font
+                            };
+    
+    //2.
+    CGSize maxSize = CGSizeMake(maxWith, MAXFLOAT);
+    
+    //3.
+    return [self boundingRectWithSize:maxSize
+                              options:NSStringDrawingUsesLineFragmentOrigin
+                           attributes:attrs
+                              context:nil].size;
+}
+
+- (CGSize)sizeWithfont:(UIFont*)font
+{
+    return [self sizeWithfont:font MaxWith:MAXFLOAT];
+}
+
+@end
+```
+
+***
+
+###自定义Cell的步骤
+
+- 一、新建一个UITableViewCell子类
+
+- 二、重写`initWithStyle:`方法
+	- 创建所有的Sub UIView实例
+	- 将所有的subviews实例添加到UITableView.`contentView`中
+	- 对一些subview设置基础属性（字体大小、字体名、字体颜色、背景色..）
+
+- 三、提供两个模型
+	- 模型1、`实体类`模型:存储Cell上所有subviews显示需要的数据，来决定某些subview是显示or隐藏
+	- 模型2、`Frame`模型: 存储Cell显示的frame大小，主要是高度
+
+- 四、UITableViewDelegate的高度回调函数中
+	- 返回`Frame模型`记录的`高度`
+	- 其实是做了一个Cell的`高度缓存`方案
+
+****
+
+###举例微博Cell
+
+####首先弄基础Cell的类型
+
+- Cell类型1、`原创微博` + `只有文字`
+
+![](http://i5.tietuku.com/c3943cd9f4a53e75.png)
+
+- Cell类型2、`原创微博` + `有文字` + `有配图`
+
+####带一张配图
+
+![](http://i5.tietuku.com/efda687fd6187ce4.png)
+
+####带三张配图
+
+![](http://i5.tietuku.com/6105785533846699.png)
+
+####带四张配图
+
+![](http://i5.tietuku.com/f54bd6c49cf78ae0.png)
+
+####带九张配图
+
+![](http://i5.tietuku.com/09982d4441cf6bfe.png)
+
+- Cell类型3、`转发微博` + `只有文字`
+
+![](http://i5.tietuku.com/8c5872ec1b6e925a.png)
+
+- Cell类型4、`转发微博` + `有文字` + `有配图`
+
+####带一张配图
+
+![](http://i5.tietuku.com/b8c4a0545678c82f.png)
+
+####带二张配图
+
+![](http://i12.tietuku.com/080168c769849398.png)
+
+####带九张配图
+
+![](http://i5.tietuku.com/b71671f241bed0dd.png)
+
+####定义Cell要显示数据的`实体类`模型
+
+- `Statuses`微博实体类
+
+```
+#import <Foundation/Foundation.h>
+#import "User.h"
+
+@interface Statuses : NSObject
+
+@property (nonatomic, copy) NSString *idstr;
+
+@property (nonatomic, strong) NSNumber *attitudes_count;
+@property (nonatomic, strong) NSNumber *biz_feature;
+@property (nonatomic, strong) NSNumber *comments_count;
+@property (nonatomic, strong) NSNumber *favorited;
+@property (nonatomic, strong) NSNumber *reposts_count;
+
+@property (nonatomic, copy) NSString *created_at;
+@property (nonatomic, copy) NSString *text;
+@property (nonatomic, copy) NSString *source;
+
+@property (nonatomic, copy) NSString *thumbnail_pic;
+@property (nonatomic, copy) NSString *bmiddle_pic;
+@property (nonatomic, copy) NSString *original_pic;
+
+@property (nonatomic, strong) User *user;
+
+//来自的转发微博
+@property (nonatomic, strong) Statuses *retweeted_status;
+
+//配图数组
+@property (nonatomic, strong) NSArray *pic_urls;
+
+/**
+ *  拼接得到转发微博的内容
+ */
+- (NSString *)retweetContent;
+
+@end
+```
+
+```
+#import "Statuses.h"
+#import <MJExtension.h>
+
+@implementation Statuses
+
+//load方法中，添加对数组中的每一个元素类型的描述，方便JSON转Model
++ (void)load
+{
+    [Statuses mj_setupObjectClassInArray:^NSDictionary *{
+        
+        return @{
+                 @"pic_urls" : @"ThunbImage"
+                 };
+    }];
+}
+
+- (NSString *)retweetContent {
+    return [NSString stringWithFormat:@"%@ : %@", self.retweeted_status.user.name, self.retweeted_status.text];
+}
+
+@end
+```
+
+- `User`实体类
+
+```
+#import <Foundation/Foundation.h>
+
+@interface User : NSObject
+
+@property (nonatomic, copy) NSString *idstr;
+@property (nonatomic, strong) NSNumber *mbtype;
+@property (nonatomic, strong) NSNumber *mbrank;
+@property (nonatomic, copy) NSString *screen_name;
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic, copy) NSString *location;
+@property (nonatomic, copy) NSString *url;
+@property (nonatomic, copy) NSString *profile_image_url;
+@property (nonatomic, copy) NSString *cover_image;
+@property (nonatomic, copy) NSString *cover_image_phone;
+@property (nonatomic, copy) NSString *profile_url;
+@property (nonatomic, copy) NSString *domain;
+@property (nonatomic, strong) NSNumber *followers_count;
+@property (nonatomic, strong) NSNumber *friends_count;
+@property (nonatomic, strong) NSNumber *favourites_count;
+@property (nonatomic, copy) NSString *created_at;
+@property (nonatomic, copy) NSString *avatar_large;
+@property (nonatomic, copy) NSString *avatar_hd;
+@property (nonatomic, copy) NSString *verified_reason;
+
+//添加一个vip变量，并且提供一个get方法叫做isVip
+@property (nonatomic, assign, getter = isVip) BOOL vip;
+
+@end
+```
+
+```
+@implementation User
+
+- (BOOL)isVip {
+    return self.mbrank.integerValue > 2;
+}
+
+@end
+```
+
+- 接着定义`FrameModel`用来针对某一个`实体类Model`实例，来计算在Cell上显示的所有subviews的frame，以及cell的总高度。这样做的好处是，所有位置的实体类数据在cell上显示的frame都在第一次以及计算完毕，以后不用再计算。
+	
+	- FrameModel包含一个`实体类Model`
+
+```
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+
+#import "Statuses.h"
+#define padding 10
+#define NameFont  [UIFont systemFontOfSize:13.f]
+#define TimeFont  [UIFont systemFontOfSize:12.f]
+#define ContentFont  [UIFont systemFontOfSize:14.f]
+
+/**
+ *  这个模型类的职责:
+ *
+ *    1. 承载实体类模型Statuses实例
+ *    2. 计算负责显示Statuses实例对应的TableViewCell需要的frame
+ *          2.1 TableViewCell内部所有subviews显示的frame
+ *          2.2 TableViewCell自己显示的总高度
+ *    3. 所有的frame基于`[UIScreen mainScreen].bounds.size`计算
+ *
+ */
+@interface StatusFrameModel : NSObject
+
+//实体类模型
+@property (nonatomic, strong) Statuses *status;
+
+//对应subview显示数据的frame
+@property (nonatomic, assign) CGRect iconImageViewFrame;
+@property (nonatomic, assign) CGRect vipImageViewFrame;
+@property (nonatomic, assign) CGRect photoImageViewFrame;
+@property (nonatomic, assign) CGRect nameLabelFrame;
+@property (nonatomic, assign) CGRect timeLabelFrame;
+@property (nonatomic, assign) CGRect sourceLabelFrame;
+@property (nonatomic, assign) CGRect contentLabelFrame;
+@property (nonatomic, assign) CGRect contentContainerFrame;
+
+@property (nonatomic, assign) CGRect retweetContainerFrame;
+@property (nonatomic, assign) CGRect retweetContentLabelFrame;
+@property (nonatomic, assign) CGRect retweetImageViewFrame;
+
+@property (nonatomic, assign) CGRect bottomContainerFrame;
+
+//最终cell的高度
+@property (nonatomic, assign) CGFloat cellHeight;
+
+@end
+```
+
+```
+#import "StatusFrameModel.h"
+#import "NSString+Extension.h"
+
+@implementation StatusFrameModel
+
+/**
+ *  重写setter实体类对象方法，计算实体类对象在cell上显示的所有frame以及总高度
+ */
+- (void)setStatus:(Statuses *)status {
+
+    _status = status;
+    
+    /** 
+     * 计算所有数据项显示在cell上时对应的frame 
+     *
+     *  规则1. 从上到下，累计计算
+     *  规则2. 从左到右，累计计算
+     */
+     
+     User *user = status.user;
+    
+    //头像frame
+    CGFloat iconWH = 50;
+    CGFloat iconX = padding;
+    CGFloat iconY = padding;
+    _iconImageViewFrame = CGRectMake(iconX, iconY, iconWH, iconWH);
+    
+    //昵称
+    CGFloat nameX = CGRectGetMaxX(_iconImageViewFrame) + padding;
+    CGFloat nameY = iconY;
+    CGSize nameSize = [user.name sizeWithfont:NameFont];
+    _nameLabelFrame = CGRectMake(nameX, nameY, nameSize.width, nameSize.height);
+
+    
+    //Vip图像
+    if ([user isVip]) {//如果是会员才设置Vip图像
+        CGFloat vipX = CGRectGetMaxX(_nameLabelFrame) + padding;
+        CGFloat vipY = nameY;
+        CGFloat vipW = 14;
+        CGFloat vipH = nameSize.height;
+        _vipImageViewFrame = CGRectMake(vipX, vipY , vipW, vipH);
+    }
+    
+    //时间
+    CGFloat timeX = nameX;
+    CGFloat timeY = CGRectGetMaxY(_nameLabelFrame) + padding;
+    CGSize timeSize = [status.created_at sizeWithfont:TimeFont];
+    _timeLabelFrame = CGRectMake(timeX, timeY, timeSize.width, timeSize.height);
+    
+    //来源
+    CGFloat sourX = CGRectGetMaxX(_timeLabelFrame) + padding;
+    CGFloat sourY = timeY;
+    CGSize sourSize = [status.created_at sizeWithfont:TimeFont];
+    _sourceLabelFrame = CGRectMake(sourX, sourY, sourSize.width, sourSize.height);
+    
+    //正文
+    CGFloat contentX = iconX;
+    CGFloat contentY = MAX(CGRectGetMaxY(_timeLabelFrame), CGRectGetMaxY(_iconImageViewFrame)) + padding;
+    CGFloat contentW = [UIScreen mainScreen].bounds.size.width - 2 * contentX;
+    CGFloat contentH = [status.text sizeWithfont:ContentFont MaxWidth:contentW].height;
+    _contentLabelFrame = CGRectMake(contentX, contentY, contentW, contentH);
+    
+    //配图
+    BOOL isHasPhotos = status.pic_urls.count > 0;
+    
+    if (isHasPhotos) {
+        CGFloat photoX = iconX;
+        CGFloat photoY = CGRectGetMaxY(_contentLabelFrame) + padding;
+        CGSize photoSize = [WeiboPhotoView photoViewSizeWithPhotoCount:status.pic_urls.count];
+        
+        _photoImageViewFrame = CGRectMake(photoX, photoY, photoSize.width, photoSize.height);
+        
+    } else {
+        
+        //如果实体类数据没有这个subview显示的数据项
+        _photoImageViewFrame = CGRectZero;
+    }
+    
+    //顶部和中间的容器
+    CGFloat containerMiddleX = 0;
+    CGFloat containerMiddleY = 0;
+    CGFloat containerMiddleW = [UIScreen mainScreen].bounds.size.width;
+    CGFloat containerMiddleH;
+    
+    if (!isHasPhotos) {
+        containerMiddleH = CGRectGetMaxY(_contentLabelFrame) + padding;
+    } else {
+        containerMiddleH = CGRectGetMaxY(_photoImageViewFrame) + padding;
+    }
+    
+    _contentContainerFrame = CGRectMake(containerMiddleX, containerMiddleY, containerMiddleW, containerMiddleH);
+   
+    //转发微博
+    BOOL isHasRetweet = (status.retweeted_status != nil);
+    
+    if (isHasRetweet) {//存在转发微博
+        
+        //转发微博正文
+        CGFloat retweetContentX = padding;
+        CGFloat retweetContentY = padding;
+        CGFloat retweetContentW = [UIScreen mainScreen].bounds.size.width - 2 * padding;
+        CGFloat retweetContentH = [[status retweetContent] sizeWithfont:ContentFont MaxWidth:retweetContentW].height;
+        
+        _retweetContentLabelFrame = CGRectMake(retweetContentX, retweetContentY, retweetContentW, retweetContentH);
+        
+        //转发微博图片
+        BOOL isHasRetweetImage = (status.retweeted_status.pic_urls.count > 0);
+        
+        if (isHasRetweetImage) {//有微博配图
+            CGFloat retweetImageX = retweetContentX;
+            CGFloat retweetImageY = CGRectGetMaxY(_retweetContentLabelFrame) + padding;
+            CGSize retweetImageSize = [WeiboPhotoView photoViewSizeWithPhotoCount:status.retweeted_status.pic_urls.count];
+            
+            _retweetImageViewFrame = CGRectMake(retweetImageX, retweetImageY, retweetImageSize.width, retweetImageSize.height);
+        } else {
+
+            //如果实体类数据没有这个subview显示的数据项
+            _retweetImageViewFrame = CGRectZero;
+        }
+        
+        //转发微博容器
+        CGFloat retweetContainerX = 0;
+        CGFloat retweetContainerW = [UIScreen mainScreen].bounds.size.width;
+        CGFloat retweetContainerY = CGRectGetMaxY(_contentContainerFrame);
+        CGFloat retweetContainerH;
+        
+        if (isHasRetweetImage) {
+            retweetContainerH = CGRectGetMaxY(_retweetImageViewFrame) + padding;
+        } else {
+            retweetContainerH = CGRectGetMaxY(_retweetContentLabelFrame) + padding;
+        }
+        
+        _retweetContainerFrame = CGRectMake(retweetContainerX, retweetContainerY, retweetContainerW, retweetContainerH);
+    } else {
+        
+        //如果实体类数据没有这个subview显示的数据项
+        _retweetContainerFrame = CGRectZero;
+    }
+    
+    //底部按钮容器
+    CGFloat bootmContainerX = 0;
+    CGFloat bootmContainerY;
+    CGFloat bootmContainerW = [UIScreen mainScreen].bounds.size.width;;
+    CGFloat bootmContainerH = 44;
+    
+    if (isHasRetweet) {//有转发微博
+        bootmContainerY = CGRectGetMaxY(_retweetContainerFrame) + padding;
+    } else {//没有转发微博
+        bootmContainerY = CGRectGetMaxY(_contentContainerFrame) + padding;
+    }
+    
+    _bottomContainerFrame = CGRectMake(bootmContainerX, bootmContainerY, bootmContainerW, bootmContainerH);
+    
+    //最终Cell高度
+    _cellHeight = CGRectGetMaxY(_bottomContainerFrame) + padding;
+}
+
+@end
+```
+
+- Cell统一赋值`实体类Model`的协议接口定义
+
+```
+#import <Foundation/Foundation.h>
+
+@protocol TableViewCellProtocol <NSObject>
+
+/**
+ *  1. 所有的cell实现这个方法，
+ *  2. 将传入的实体类对象数据，填充到subviews显示
+ */
+- (void)setupData:(id)data;
+
+@end
+```
+
+- BaseCell实现如上的协议，做一个空实现
+
+```
+#import <UIKit/UIKit.h>
+#import "TableViewCellProtocol.h"
+
+@interface BaseTableViewCell : UITableViewCell <TableViewCellProtocol>
+
+/**
+ *	使用传入的TableView查询缓存得到Cell对象，来屏蔽cell identifier
+ */
++ (instancetype)instanceWithTableView:(UITableView *)tv;
+
+@end
+```
+
+```
+#import "BaseTableViewCell.h"
+
+@implementation BaseTableViewCell
+
+//协议方法默认空实现
+- (void)setupData:(id)data {}
+
+//查询缓存cell方法空实现
++ (instancetype)instanceWithTableView:(UITableView *)tv {return nil;}
+
+@end
+```
+
+- 最终的Cell继承自`BaseCell`
+
+```
+#import <UIKit/UIKit.h>
+
+#import "BaseTableViewCell.h"
+
+#import "StatusFrameModel.h"
+
+/**
+ *  微博Cell
+ */
+@interface WBTableViewCell : BaseTableViewCell
+
++ (instancetype)instanceWithTableView:(UITableView *)tv;
+
+@end
+```
+
+```
+@interface WBTableViewCell ()
+
+//-----------------------原创微博-----------------------
+@property (nonatomic, strong) UIView *contentContainer;
+@property (nonatomic, strong) UIImageView *iconImageView;//头像
+@property (nonatomic, strong) UIImageView *vipImageView;//VIP图像
+@property (nonatomic, strong) UIImageView *photoImageView;//配图
+@property (nonatomic, strong) UILabel *nameLabel;//昵称
+@property (nonatomic, strong) UILabel *timeLabel;//时间
+@property (nonatomic, strong) UILabel *sourceLabel;//来源
+@property (nonatomic, strong) UILabel *contentLabel;//正文
+
+//-----------------------转发微博-----------------------
+@property (nonatomic, strong) UIView *retweetContainer;
+@property (nonatomic, strong) UILabel *retweetContentLabel;
+@property (nonatomic, strong) UIImageView *retweetImageView;
+
+//-----------------------底部按钮-----------------------
+@property (nonatomic, strong) UIView *bottomContainer;
+//@property (nonatomic, strong) UIView *bottomContainer;
+//@property (nonatomic, strong) UIView *bottomContainer;
+@end
+```
+
+```
+@implementation WBTableViewCell
+
++ (NSString *)identifier {
+    return NSStringFromClass([WBTableViewCell class]);
+}
+
++ (instancetype)instanceWithTableView:(UITableView *)tv {
+    WBTableViewCell *cell = [tv dequeueReusableCellWithIdentifier:[self identifier]];
+    if (!cell) {
+        cell = [[WBTableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:[self identifier]];
+    }
+    return cell;
+}
+
+- (void)dealloc {
+    
+    _iconImageView = nil;
+    _vipImageView = nil;
+    _photoImageView = nil;
+    
+    _nameLabel = nil;
+    _timeLabel = nil;
+    _sourceLabel = nil;
+    _contentLabel = nil;
+}
+
+
+- (instancetype)initWithStyle:(UITableViewCellStyle)style
+              reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+        [self initSubviews];
+    }
+    return self;
+}
+
+#pragma mark  添加所有subviews、以及设置
+
+- (void)initSubviews {
+    
+    //1. 让cell背景色透明，显示tableView的背景颜色
+    self.backgroundColor = [UIColor clearColor];
+    
+    //2. 初始化原创微博subviews
+    [self initOriginWeiboSubviews];
+    
+    //3. 初始化转发微博subviews
+    [self initRetweetWeiboSubviews];
+    
+    //4. 底部按钮
+    [self initBottomWeiboSubviews];
+}
+
+- (void)initOriginWeiboSubviews {
+    
+    //1. 初始化subviews
+    _contentContainer = [[UIView alloc] init];
+    _contentContainer.backgroundColor = [UIColor whiteColor];
+    
+    _iconImageView = [[UIImageView alloc] init];
+    _vipImageView = [[UIImageView alloc] init];
+    _photoImageView = [[UIImageView alloc] init];
+    
+    _nameLabel = [[UILabel alloc] init];
+    _timeLabel = [[UILabel alloc] init];
+    _contentLabel = [[UILabel alloc] init];
+    _sourceLabel = [[UILabel alloc] init];
+    
+    
+    //2. subview基础设置
+    _iconImageView.contentMode = UIViewContentModeCenter;
+    _vipImageView.contentMode = UIViewContentModeCenter;
+    _photoImageView.contentMode = UIViewContentModeCenter;
+    
+    _nameLabel.font = NameFont;
+    _timeLabel.font = TimeFont;
+    _sourceLabel.font = TimeFont;
+    
+    _contentLabel.font = ContentFont;
+    //自动换行Label
+    _contentLabel.numberOfLines = 0;
+    //最大显示宽大Label
+    _contentLabel.preferredMaxLayoutWidth = [UIScreen mainScreen].bounds.size.width - 2 * padding;
+    
+    
+    //3. 添加subviews
+    
+    [_contentContainer addSubview:_iconImageView];
+    [_contentContainer addSubview:_vipImageView];
+    [_contentContainer addSubview:_photoImageView];
+    [_contentContainer addSubview:_nameLabel];
+    [_contentContainer addSubview:_timeLabel];
+    [_contentContainer addSubview:_contentLabel];
+    [_contentContainer addSubview:_sourceLabel];
+    
+    [self.contentView addSubview:_contentContainer];
+}
+
+- (void)initRetweetWeiboSubviews {
+    
+    _retweetContainer = [[UIView alloc] init];
+    _retweetContainer.backgroundColor = [UIColor orangeColor];
+    [self.contentView addSubview:_retweetContainer];
+    
+    _retweetContentLabel = [[UILabel alloc] init];
+    _retweetContentLabel.font = ContentFont;
+    _retweetContentLabel.numberOfLines = 0;
+    _retweetContentLabel.preferredMaxLayoutWidth = [UIScreen mainScreen].bounds.size.width - 2 * padding;
+    [_retweetContainer addSubview:_retweetContentLabel];
+    
+    _retweetImageView = [[UIImageView alloc] init];
+    [_retweetContainer addSubview:_retweetImageView];
+}
+
+- (void)initBottomWeiboSubviews {
+    
+    _bottomContainer = [[UIView alloc] init];
+    [self.contentView addSubview:_bottomContainer];
+    _bottomContainer.backgroundColor = [UIColor blueColor];
+}
+
+#pragma mark  实体对象赋值协议方法实现
+
+- (void)setupData:(id)data
+{
+    //传入的是FrameModel
+    if ([data isMemberOfClass:[StatusFrameModel class]])
+    {
+        
+        //1.转换成 FrameModel
+        StatusFrameModel *frameModel = (StatusFrameModel *)data;
+        
+        //2. 完成subviews显示的实体对象数据、以及决定隐藏哪些subviews
+        [self setupSubviewsDatas:frameModel.status];
+        
+        //3. 设置所有subviews的frame，不显示的subview设置frame为CGRectZero
+        [self setupSubviewsFrame:frameModel];
+    }
+    
+}
+
+/**
+ * 主要完成给subviews设置显示的数据，
+ * 全部subview都设置frame，不区分有没有数据
+ * 因为FrameModel中将没有数据项的subview的frame设置为CGRectZero，没有显示的大小
+ */
+- (void)setupSubviewsDatas:(Statuses *)status {
+    
+    //1. 设置头像数据
+    [_iconImageView sd_setImageWithURL:[NSURL URLWithString:status.user.profile_image_url] placeholderImage:[UIImage imageNamed:@"avatar_default"] options:SDWebImageProgressiveDownload];
+    
+    //3. 昵称显示
+    _nameLabel.text = status.user.name;
+    
+    //4. 会员等级显示
+    if (status.user.isVip) {
+        
+        _vipImageView.image = [UIImage imageNamed:@"common_icon_membership"];
+        
+        //显示会员等级
+        _vipImageView.hidden = NO;
+        
+        //修改名字颜色
+        _nameLabel.textColor = [UIColor orangeColor];
+        
+    } else {
+        
+        //隐藏会员等级
+        _vipImageView.hidden = YES;
+        
+        //修改名字颜色
+        _nameLabel.textColor = [UIColor blackColor];
+    }
+    
+    //5. 配图
+    _photoImageView.backgroundColor = [UIColor redColor];
+    
+    if (status.pic_urls.count > 0)
+    {
+        _photoImageView.hidden = NO;
+        
+    } else {
+        
+        _photoImageView.hidden = YES;
+    }
+    
+    //6. 时间
+    _timeLabel.text = status.created_at;
+    
+    //7.正文
+    _contentLabel.text = status.text;
+    
+    //8. 来源
+    _sourceLabel.text = status.source;
+    _sourceLabel.textColor = [UIColor lightGrayColor];
+    
+    //9. 转发微博
+    if (status.retweeted_status) {//有转发微博
+        
+        //9.1 转发微博容器
+        _retweetContainer.hidden = NO;
+        
+        //9.2 转发内容
+        _retweetContentLabel.text = [status retweetContent];
+        
+        //9.3 转发配图
+        if (status.retweeted_status.pic_urls) {//转发微博有配图
+            _retweetImageView.hidden = NO;
+            _retweetImageView.backgroundColor = [UIColor yellowColor];
+            
+        } else {//转发微博无配图
+            _retweetImageView.hidden = YES;
+        }
+        
+    } else {//无转发微博
+        _retweetContainer.hidden = YES;
+    }
+}
+
+/**
+ *  主要完成给subview设置显示的frame
+ */
+- (void)setupSubviewsFrame:(StatusFrameModel *)frameModel
+{
+    
+    //1.
+    _contentContainer.frame = frameModel.contentContainerFrame;
+    
+    //2.
+    _iconImageView.frame = frameModel.iconImageViewFrame;
+    
+    //3.
+    _nameLabel.frame = frameModel.nameLabelFrame;
+    
+    //4.
+    _vipImageView.frame = frameModel.vipImageViewFrame;
+    
+    //5.
+    _photoImageView.frame = frameModel.photoImageViewFrame;
+    
+    //6.
+    _timeLabel.frame = frameModel.timeLabelFrame;
+    
+    //7.
+    _contentLabel.frame = frameModel.contentLabelFrame;
+    
+    //8.
+    _sourceLabel.frame = frameModel.sourceLabelFrame;
+    
+    //9.
+    _retweetContainer.frame = frameModel.retweetContainerFrame;
+    _retweetContentLabel.frame = frameModel.retweetContentLabelFrame;
+    _retweetImageView.frame = frameModel.retweetImageViewFrame;
+    
+    //10.
+    _bottomContainer.frame = frameModel.bottomContainerFrame;
+}
+
+
+@end
+```
+
+- UITableViewController使用Cell
+
+```
+@interface PullRefreshController ()
+
+@property (nonatomic, strong) NSMutableArray *dataList;
+
+@end
+```
+
+```
+@implementation PullRefreshController
+
+#pragma mark UITableViewDelegate
+
+//取出对应的FrameModel，返回其计算的cell总高度
+-(CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    //1. 取出FrmaeModel
+    StatusFrameModel *frameModel = self.dataList[indexPath.row];
+    
+    //2. 取出保存的cell高度
+    CGFloat height = frameModel.cellHeight;
+    
+    //3. 返回缓存好的cell高度
+    return height;
+}
+
+#pragma mark UITableViewDataSource
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
+{
+    return [self.dataList count];
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath
+{
+    //1. 调用cell提供获取cell实例的方法
+    //id <TableViewCellProcotol> cell = ....;
+    WBTableViewCell *cell = [WBTableViewCell instanceWithTableView:tableView];
+    
+    //2. 取出当前cell所在的indexPath对应 FrameModel
+    id data = self.dataList[indexPath.row];
+    
+    //3. 调用cell赋值FrameModel的协议接口方法
+    [cell setupData:data];
+    
+    return cell;
+}
+
+#pragma mark - UIScrollViewDelegate
+
+//判断是否滚动到底部
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView{
+    
+    //如果没有数据直接返回
+    if (self.dataList.count < 1 || self.tableView.tableFooterView.isHidden == NO) {
+        return;
+    }
+    
+    //当前scrollView滚动到的y坐标
+    CGFloat currntOffsetY = scrollView.contentOffset.y;
+    
+    //当最后一个cell完全显示时，scrollView的y坐标
+    CGFloat desOffsetY = scrollView.contentSize.height + scrollView.contentInset.bottom - scrollView.height - self.tableView.tableFooterView.height;
+    
+    if (currntOffsetY >= desOffsetY) {
+        //当最后一个cell完全显示
+        
+        //1. 显示footer
+        self.tableView.tableFooterView.hidden = NO;
+        
+        //2. 调用Api加载更多的数据
+        [self getOldWeibos];
+    }
+}
+
+
+@end
+```
+
+OK，如上是在`Frame`时代，完成自定义Cell的步骤。
+但是到了`AutoLayout`时代，就不需要计算frame了，而是在`init的时候`和`updateConstraints的时候`设置`约束`
+
+****
+
+###在微博Cell上添加图片九宫格
+
+- 将显示九宫格布局图片的单独的UIView类`WeiboPhotoView`
+
+- `WeiboPhotoView`做的事情
+	- 事情1、完成九宫格图片布局
+	- 事情2、提供计算九宫格布局最终的Size
+	- 事情3、不断的重用内部的9个UIImageView
+		- 当前显示图片张数 < WeiboPhotoView.subviews.count时，添加UIImageView
+			- 处理1、UIImageView.hiden = NO;
+		- 当前显示图片张数 > WeiboPhotoView.subviews.count时，将多余的UIImageView做如下处理
+			- 处理1、UIImageView.hiden = YES;
+			- 处理2、UIImageView.image = nil;
+			- 处理3、UIImageView.frame = CGRectZero;
+
+```
+#import <UIKit/UIKit.h>
+
+//每一张图片的宽度和高度
+extern CGFloat PhotoWH;
+
+@interface WeiboPhotoView : UIView
+
+@property (nonatomic, strong) NSArray *photos;
+
+/**
+ *  根据传入显示的图片的张数得到最终尺寸
+ *
+ *  规定1: 最多显示9张图片
+ *  规定2: 一行最多显示3张图片
+ *  规定3: 最多显示3行
+ */
++ (CGSize)photoViewSizeWithPhotoCount:(NSInteger)count;
+
+
+@end
+```
+
+```
+#import "WeiboPhotoView.h"
+#import <SDWebImage/UIImageView+WebCache.h>
+#import "ThunbImage.h"
+
+CGFloat PhotoWH = 70;
+CGFloat PhotoPadding = 10;
+
+@interface WeiboPhotoView ()
+
+@end
+
+@implementation WeiboPhotoView
+
+
+- (void)setPhotos:(NSArray *)photos {
+    _photos = photos;
+    
+    //添加与传入图片数相对的ImageView
+    while (self.subviews.count < _photos.count) {
+        UIImageView *subview = [[UIImageView alloc] init];
+        [self addSubview:subview];
+    }
+    
+    //遍历ImageView，显示图片
+    for (NSInteger index = 0; index < _photos.count; index++)
+    {
+        UIView *subview = [self.subviews objectAtIndex:index];
+        
+        if (![subview isMemberOfClass:[UIImageView class]])
+            return;
+
+        UIImageView *imageView = (UIImageView *)subview;
+        
+        ThunbImage *item = [_photos objectAtIndex:index];
+        NSURL *imageURL = [NSURL URLWithString:[item thumbnail_pic]];
+        
+        if (index < _photos.count) {
+            
+            imageView.hidden = NO;
+            imageView.image = nil;
+            [imageView sd_setImageWithURL:imageURL placeholderImage:nil];
+            
+        } else {
+            
+            imageView.hidden = YES;
+            imageView.image = nil;
+        }
+    }
+}
+
+- (UIColor *)randomColor {
+    CGFloat hue = ( arc4random() % 256 / 256.0 );  //  0.0 to 1.0
+    CGFloat saturation = ( arc4random() % 128 / 256.0 ) + 0.5;  //  0.5 to 1.0, away from white
+    CGFloat brightness = ( arc4random() % 128 / 256.0 ) + 0.5;  //  0.5 to 1.0, away from black
+    return [UIColor colorWithHue:hue saturation:saturation brightness:brightness alpha:1];
+}
+
+#pragma mark - 布局subviews的frame
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    for (NSInteger i = 0; i < self.subviews.count; i++)
+    {
+        UIView *subview = [self.subviews objectAtIndex:i];
+       
+        if (![subview isMemberOfClass:[UIImageView class]])
+            return;
+            
+        if (i < self.photos.count) {
+            
+            NSInteger row = i / [[self class] maxColCountWithTotolCount:self.photos.count];
+            NSInteger col = i % [[self class] maxColCountWithTotolCount:self.photos.count];
+            
+            CGFloat x = (PhotoPadding + PhotoWH) * col + PhotoPadding;
+            CGFloat y = (PhotoPadding + PhotoWH) * row + PhotoPadding;
+            
+            CGRect rect = CGRectMake(x, y, PhotoWH, PhotoWH);
+            
+            subview.frame = rect;
+            
+        } else {
+            subview.hidden = YES;
+            subview.frame = CGRectZero;
+        }
+            
+    }
+}
+
+/**
+ *  返回最大列数
+ */
++ (NSInteger)maxColCountWithTotolCount:(NSInteger)count {
+    
+    if (count == 4) {//四张图片时，按照田字布局
+        return 2;//返回两列
+    } else {
+        return 3;
+    }
+}
+
++ (CGSize)photoViewSizeWithPhotoCount:(NSInteger)count {
+    
+    //1. 最大列数
+    NSInteger maxColCount = [self maxColCountWithTotolCount:count];
+    
+    //2. 计算总列数
+    NSInteger colCount = (count >= maxColCount) ? maxColCount : count;
+    
+    //3. 计算总行数
+    NSUInteger rowCount = (count + maxColCount - 1) / maxColCount;
+    
+    //4. 总宽度
+    CGFloat w = colCount * (PhotoPadding + PhotoWH) + PhotoPadding;
+    CGFloat h = rowCount * (PhotoPadding + PhotoWH) + PhotoPadding;
+    CGSize size = CGSizeMake(w, h);
+    
+    return size;
+}
+
+@end
+```
+
+- 修改之前的Cell类，将UIImageView替换为封装的`WeiboPhotoView`
+
+```
+@interface WBTableViewCell ()
+
+//-----------------------原创微博-----------------------
+//...
+//@property (nonatomic, strong) UIImageView *photoImageView;//配图
+@property (nonatomic, strong) WeiboPhotoView *photoImageView;//配图
+//..
+
+//-----------------------转发微博-----------------------
+//...
+//@property (nonatomic, strong) UIImageView *retweetImageView;
+@property (nonatomic, strong) WeiboPhotoView *retweetImageView;
+//...
+
+@end
+```
+
+```
+@implementation WBTableViewCell
+
+//...
+
+- (void)initOriginWeiboSubviews {
+
+//...
+
+//_photoImageView = [[UIImageView alloc] init];
+_photoImageView = [[WeiboPhotoView alloc] init];
+
+//..
+
+}
+
+- (void)initRetweetWeiboSubviews {
+
+//...
+
+//_retweetImageView = [[UIImageView alloc] init];
+_retweetImageView = [[WeiboPhotoView alloc] init];
+
+//...
+
+}
+
+@end
+```
+
+- `StatusFrameModel`使用`WeiboPhotoView`提供的计算size的方法
+
+```
+导入.h
+
+#import "WeiboPhotoView.h"
+```
+
+```
+/**
+ *  重写setter实体类对象方法
+ */
+- (void)setStatus:(Statuses *)status {
+
+//...
+
+	//配图
+    BOOL isHasPhotos = status.pic_urls.count > 0;
+    
+    if (isHasPhotos) {
+        CGFloat photoX = iconX;
+        CGFloat photoY = CGRectGetMaxY(_contentLabelFrame) + padding;
+//        CGFloat photoW = 80;
+//        CGFloat photoH = 80;
+
+		//得到计算的配图View的大小size
+        CGSize photoSize = [WeiboPhotoView photoViewSizeWithPhotoCount:status.pic_urls.count];
+//         _photoImageViewFrame = CGRectMake(photoX, photoY, photoW, photoH);
+        _photoImageViewFrame = CGRectMake(photoX, photoY, photoSize.width, photoSize.height);
+    } else {
+        
+        //如果实体类数据没有这个subview显示的数据项
+        _photoImageViewFrame = CGRectZero;
+    }
+	
+//...
+	
+	//转发微博
+    BOOL isHasRetweet = (status.retweeted_status != nil);
+    
+    if (isHasRetweet) {//存在转发微博
+    
+    	//...
+    	
+    	BOOL isHasRetweetImage = (status.retweeted_status.pic_urls.count > 0);
+    	
+    	if (isHasRetweetImage) {//有微博配图
+            CGFloat retweetImageX = retweetContentX;
+            CGFloat retweetImageY = CGRectGetMaxY(_retweetContentLabelFrame) + padding;
+//            CGFloat retweetImageW = 80;
+//            CGFloat retweetImageH = 80;
+
+			//得到计算的配图View的大小size
+            CGSize retweetImageSize = [WeiboPhotoView photoViewSizeWithPhotoCount:status.pic_urls.count];
+//            _retweetImageViewFrame = CGRectMake(retweetImageX, retweetImageY, retweetImageW, retweetImageH);
+            _retweetImageViewFrame = CGRectMake(retweetImageX, retweetImageY, retweetImageSize.width, retweetImageSize.height);
+        } else {
+            
+            //如果实体类数据没有这个subview显示的数据项
+            _retweetImageViewFrame = CGRectZero;
+        }
+		
+		
+		//...
+		
+	} else { 
+		
+		//...
+	}
+		
+//...
+	
+}
+```
+
+
+****
+
+###给图片右下角添加识别为gif图片的功能
+
+####图示效果
+
+![](http://i12.tietuku.com/972818be9c4e7a27.png)
+
+####代码实现
+
+```
+@interface WeiboPhotoImageView : UIImageView
+
+- (void)setImageURL:(NSString *)url;
+
+@end
+```
+
+```
+#import "WeiboPhotoImageView.h"
+#import <SDWebImage/UIImageView+WebCache.h>
+
+@implementation WeiboPhotoImageView {
+    UIImageView *iv;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        
+        //添加右下角的图片
+        UIImage *image = [UIImage imageNamed:@"timeline_image_gif"];
+        iv = [[UIImageView alloc] initWithImage:image];
+        [self addSubview:iv];
+        
+        //设置图片防止拉伸变形
+        self.contentMode = UIViewContentModeScaleAspectFill;
+        self.clipsToBounds = YES;
+    }
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    UIImage *image = [UIImage imageNamed:@"timeline_image_gif"];
+    
+    CGFloat x = CGRectGetWidth(self.frame) - image.size.width;
+    CGFloat y = CGRectGetHeight(self.frame) - image.size.height;
+    
+    iv.frame = CGRectMake(x, y, image.size.width, image.size.height);
+}
+
+- (void)setImageURL:(NSString *)url {
+    
+    //1. 查看对应路径图片是否是gif后缀
+    if ([url hasSuffix:@"gif"]) {
+        [self setGif];
+    } else {
+        [self setNoGif];
+    }
+
+    //2. 加载网络图片
+    [self sd_setImageWithURL:[NSURL URLWithString:url] placeholderImage:nil];
+}
+
+- (void)setGif {
+    iv.hidden = NO;
+}
+
+- (void)setNoGif {
+    iv.hidden = YES;
+}
+
+@end
+```
+
+***
+
+###自定义UITextView完成发送微博界面
+
+
+####问题: 自定义UItextView实例不能设置自己为UITextDelegate的代理实现对象
+
+- 原因: 因为外界可能也会设置，那么内部就无法完成代理回调了
+
+- 解决: 内部使用注册通知完成回调
+
+```
+- (void)addNotifiactions {
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    
+    [center addObserver:self
+               selector:@selector(testDidChanged:)
+                   name:UITextViewTextDidChangeNotification
+                 object:nil];
+    
+    [center addObserver:self
+               selector:@selector(testBeginEditing:)
+                   name:UITextViewTextDidBeginEditingNotification
+                 object:nil];
+    
+    [center addObserver:self
+               selector:@selector(testDidEndEdit:)
+                   name:UITextViewTextDidEndEditingNotification
+                 object:nil];
+}
+
+- (void)testDidChanged:(NSNotification *)notify
+{
+    //通知系统执行drawRwct:
+    [self setNeedsDisplay];
+}
+
+- (void)testBeginEditing:(NSNotification *)notify
+{
+    
+}
+
+- (void)testDidEndEdit:(NSNotification *)notify
+{
+    [self setNeedsDisplay];
+}
+```
+
+####问题: 直接在画布区域绘制文字，不能显示
+
+- 原因: 系统传入的rect在有导航栏时，rect.y向上偏移64，所以看不到
+
+- 解决: 必须指定绘制rect.y >= 0，才会显示处理啊
+
+```
+- (void)drawRect:(CGRect)rect
+{
+    //dwawRect:方法每次执行时
+    //1. 会全部清除掉，之前画布上的所有图像全部
+    //2. 再将新的图像绘制上去
+    
+    if (!self.hasText) {
+        
+        NSDictionary *attr = @{
+                               NSFontAttributeName : [UIFont systemFontOfSize:14.f]
+                               };
+        
+        //drawAtPoint:只会单行绘制
+        //[_placeHolder drawAtPoint:CGPointZero withAttributes:attr];
+        
+        //drawInRect:在制定的CGRect内部绘制
+        CGFloat placeX = 5;
+        CGFloat placeY = 5;【必须指定y坐标大于0，才会显示文字，否则向上偏移64】
+        CGFloat placeW = rect.size.width - 2 * 5;
+        CGFloat placeH = rect.size.height - 2 * 5;
+        CGRect placeRect = CGRectMake(placeX, placeY, placeW, placeH);
+        [_placeHolder drawInRect:placeRect withAttributes:attr];
+        
+        //注意如下直接在画布区域绘制显示不出来
+        //原因: 系统传入的rect在有导航栏时，rect.y向上偏移64，所以看不到
+        //所以要让文字看到，必须指定绘制rect.y >= 0，才会显示处理啊
+        //[_placeHolder drawInRect:rect withAttributes:attr];
+    }
+}
+```
+
+****
+
+###在键盘上方添加一个工具条ToolBar
+
+####图示效果
+
+![](http://i12.tietuku.com/3eddf5c021ff4df6.png)
+
+####首先自定义一个工具条ToolBar
+
+```
+#import <UIKit/UIKit.h>
+
+@interface KeyboardToolBar : UIView
+
+@end
+```
+
+```
+#import "KeyboardToolBar.h"
+#import "UIView+FrameExt.h"
+
+@implementation KeyboardToolBar
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+
+        [self setToolBarBackgroudColor];
+        
+        [self setupSubviews];
+        
+    }
+    return self;
+}
+
+/**
+ *  设置背景色是一个图片的平铺
+ */
+- (void)setToolBarBackgroudColor {
+    
+    self.backgroundColor = [UIColor colorWithPatternImage:[UIImage imageNamed:@"compose_toolbar_background"]];
+}
+
+- (void)setupSubviews {
+    
+    //添加ToolBar上的6个按钮
+    
+    [self _addButtonWithNormalImage:@"compose_camerabutton_background" HilightImage:@"compose_camerabutton_background_highlighted"];
+    
+    [self _addButtonWithNormalImage:@"compose_emoticonbutton_background" HilightImage:@"compose_emoticonbutton_background_highlighted"];
+    
+    [self _addButtonWithNormalImage:@"compose_keyboardbutton_background" HilightImage:@"compose_keyboardbutton_background_highlighted"];
+    
+    [self _addButtonWithNormalImage:@"compose_mentionbutton_background" HilightImage:@"compose_mentionbutton_background_highlighted"];
+    
+    [self _addButtonWithNormalImage:@"compose_toolbar_picture" HilightImage:@"compose_toolbar_picture_highlighted"];
+    
+    [self _addButtonWithNormalImage:@"compose_trendbutton_background" HilightImage:@"compose_trendbutton_background_highlighted"];
+}
+
+- (void)_addButtonWithNormalImage:(NSString *)normal HilightImage:(NSString *)hilght
+{
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+    [btn setImage:[UIImage imageNamed:normal] forState:UIControlStateNormal];
+    [btn setImage:[UIImage imageNamed:hilght] forState:UIControlStateHighlighted];
+    [self addSubview:btn];
+}
+
+#pragma mark - 
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    //设置所有按钮的frame
+    
+    CGFloat x = 0;
+    CGFloat y = 0;
+    CGFloat w = self.width / self.subviews.count;
+    CGFloat h = self.height;
+    
+    for (NSInteger i = 0; i < self.subviews.count; i++) {
+        
+        UIButton *button = [self.subviews objectAtIndex:i];
+        
+        CGRect rect = CGRectMake(x + i * w,
+                                 y,
+                                 w,
+                                 h);
+        
+        button.frame = rect;
+    }
+}
+
+@end
+```
+
+####在键盘上方显示ToolBar方法一、直接将Toolbar设置为UITextView的`inputAccessoryView`
+
+- ViewController使用ToolBar
+
+```
+@implementation WeiboSendViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    //1. textView
+    [self.view addSubview:self.contentTextView];
+    
+    //2. 方法一、添加键盘工具栏
+    [self addToolBarDemo1];
+    
+    //3. 方法二、添加键盘工具栏
+//    [self addToolBarDemo2];
+}
+
+- (void)addToolBarDemo1 {
+    
+    //1. 设置inputAccessoryView的宽度和高度，必须设置，否则无法显示
+    self.keyboardToolBar.width = self.view.width;
+    self.keyboardToolBar.height = 44;
+    
+    //2. 将自定义的toolbar设置为UITextView的 inputAccessoryView
+    self.contentTextView.inputAccessoryView = self.keyboardToolBar;
+}
+
+@end
+```
+
+- 效果图
+
+![](http://i12.tietuku.com/295783347c1cf3f7.png)
+
+- 缺点: `当键盘被移除时，上面的ToolBar也随之被移除不见.`
+
+
+####在键盘上方显示ToolBar方法二、
+
+- ViewController使用ToolBar
+
+```
+@implementation WeiboSendViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    //1. textView
+    [self.view addSubview:self.contentTextView];
+    
+    //2. 方法一、添加键盘工具栏
+    [self addToolBarDemo1];
+    
+    //3. 方法二、添加键盘工具栏
+//    [self addToolBarDemo2];
+}
+
+- (void)addToolBarDemo2 {
+    
+    //1. 将ToolBar添加到控制器View上
+    [self.view addSubview:self.keyboardToolBar];
+    
+    //2. 设置ToolBar的frame
+    self.keyboardToolBar.frame  = CGRectMake(0,
+                                             self.view.height - 44,
+                                             self.view.width,
+                                             44);
+}
+```
+
+- 让ToolBar自己监听`键盘事件通知`处理自己的`originY坐标`，修改上面的ToolBar代码如下:
+
+```
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+	
+		//...
+		
+		//注册键盘通知
+		[self addNotifications];
+    }
+    return self;
+}
+
+- (void)addNotifications {
+    
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    
+    //监听键盘Frame将要改变的通知
+    [center addObserver:self
+               selector:@selector(KeyboardWillChangeFrame:)
+                   name:UIKeyboardWillChangeFrameNotification
+                 object:nil];
+}
+
+- (void)KeyboardWillChangeFrame:(NSNotification *)notify
+{
+    //1. 取出动画执行事件
+    CGFloat duration = [notify.userInfo[UIKeyboardAnimationDurationUserInfoKey] doubleValue];
+    
+    //2. 取出当前键盘的frame
+    CGRect keyboardFrame = [notify.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+    
+    //3. 执行修改y坐标的动画
+    [UIView animateWithDuration:duration animations:^{
+        self.originY = keyboardFrame.origin.y - self.height;
+    }];
+    
+}
+
+//....
+
+@end
+```
+
+- 效果图
+
+![](http://i12.tietuku.com/3eddf5c021ff4df6.png)
+
+![](http://i5.tietuku.com/a4e33ca62f62c847.png)
+
+****
+
+###自定义一个表情键盘
+
+
+
+****
+
+###写一个选择图片的相册UI控件
+
+####第一步、首先，导入用于获取用户手机设备上所有图片资源的framework -- `AssetsLibrary.framework`
+
+![](http://i5.tietuku.com/5396552a69aea743.png)
+
+####第二步、然后使用`AssetsLibrary.framework`获取
+
+- 所有的相册
+- 每个相册的所有图片
+
+####第三步、使用`UICollectionView`+`UICollectionViewCell`显示读取到的所有图片UIImage
+
+####第四步、提供回调Block，回传选择的`多张UIImage`
+
+****
+
+###自定义表情键盘
+
+####首先，理清楚UI的结构组成
+
+- 键盘上方的工具条 `KeyboardToolBar : UIView`
+
+- 自定义表情键盘 `EmotionKeyBoard : UIView`
+	- `EmotionKeyboardContentView : UIView` ，键盘上方显示各种表情的滑动的容器View 
+	- `EmotionKeyboardTabView : UIView`，键盘下方显示Tab选项的容器View
+
+![](http://i12.tietuku.com/295c15d39f695d1e.png)
+
+####键盘上方的工具条
+
+- 贴在弹出键盘的上方
+- 贴在控制器View的底部
+- 工具条添加到制器View上
+
+####自定义键盘
+
+- `UITextView.inputView = 我们自己的键盘View`，就可以显示我们自己的键盘View了
+
+- `UITextView.inputView = nil`，就是显示系统键盘View
+
+- 整个自定义键盘的大致UI结构
+
+![](http://i12.tietuku.com/e464445c7384e7aa.png)
+
+####自定义键盘底部选项卡按钮
+
+![](http://i5.tietuku.com/98b355eda0e47f60.png)
+
+![](http://i5.tietuku.com/61f86f3c4d8b909d.png)
+
+- 抽了一个UIButton的公共方法分类，快速创建一个设置各种属性的按钮对象
+
+```
+#import <UIKit/UIKit.h>
+
+@interface UIButton (Factory)
+
++ (instancetype) buttonWithTitle:(NSString *)title
+                          Target:(id)target
+                        ClickSEL:(SEL)sel
+                          Normal:(NSString *)normal
+                         Hilight:(NSString *)hilight
+                        NormalBG:(NSString *)normalBg
+                       HilightBG:(NSString *)hilightBg
+                 NormalTextColor:(UIColor *)normaltextColor
+                HilightTextColor:(UIColor *)hilightTextColor
+                      TouchEvent:(UIControlEvents)events;
+
+@end
+```
+
+```
+#import "UIButton+Factory.h"
+
+@implementation UIButton (Factory)
+
+
++ (instancetype) buttonWithTitle:(NSString *)title
+                        Target:(id)target
+                      ClickSEL:(SEL)sel
+                        Normal:(NSString *)normal
+                       Hilight:(NSString *)hilight
+                      NormalBG:(NSString *)normalBg
+                     HilightBG:(NSString *)hilightBg
+               NormalTextColor:(UIColor *)normaltextColor
+              HilightTextColor:(UIColor *)hilightTextColor
+                    TouchEvent:(UIControlEvents)events
+{
+    id btn = [self buttonWithType:UIButtonTypeCustom];
+
+    [btn setTitle:title forState:UIControlStateNormal];
+    
+    [btn setTitleColor:normaltextColor forState:UIControlStateNormal];
+//    [btn setTitleColor:hilightTextColor forState:UIControlStateHighlighted];
+    [btn setTitleColor:hilightTextColor forState:UIControlStateSelected];
+    
+    [btn setImage:[UIImage imageNamed:normal] forState:UIControlStateNormal];
+    [btn setImage:[UIImage imageNamed:hilight] forState:UIControlStateSelected];
+
+    [btn setBackgroundImage:[UIImage imageNamed:normalBg] forState:UIControlStateNormal];
+    [btn setBackgroundImage:[UIImage imageNamed:hilightBg] forState:UIControlStateSelected];
+    
+    [btn addTarget:target action:sel forControlEvents:events];
+    
+    return btn;
+
+}
+
+@end
+```
+
+- 又抽了一个UIView分类，用来计算水平等宽度的subviews的frame计算
+
+```
+#import <UIKit/UIKit.h>
+
+@interface UIView (FrameExt)
+
+- (CGFloat)height;
+- (void)setHeight:(CGFloat)h;
+
+- (CGFloat)width;
+- (void)setWidth:(CGFloat)w;
+
+- (CGPoint)origin;
+- (void)setOrigin:(CGPoint)point;
+
+- (CGSize)size;
+- (void)setSize:(CGSize)size;
+
+- (CGFloat)originX;
+- (void)setOriginX:(CGFloat)x;
+
+- (CGFloat)originY;
+- (void)setOriginY:(CGFloat)y;
+
+/**
+ *  返回所在九宫格的frame
+ */
+- (CGRect)getFrameWithRegionRect:(CGRect)rect
+                       ItemCount:(NSInteger)itemCount
+                 perRowItemCount:(NSInteger)perRowItemCount
+               perColumItemCount:(NSInteger)perColumItemCount
+                       itemWidth:(CGFloat)itemWidth
+                      itemHeight:(NSInteger)itemHeight
+                        paddingX:(CGFloat)paddingX
+                        paddingY:(CGFloat)paddingY
+                         atIndex:(NSInteger)index
+                          onPage:(NSInteger)page;
+
+
+/**
+ *  水平等间距布局subviews
+ */
+- (void)horizenLayoutSubviews;
+
+@end
+```
+
+```
+#import "UIView+FrameExt.h"
+
+@implementation UIView (FrameExt)
+
+- (CGSize)size {
+    return self.frame.size;
+}
+
+- (void)setSize:(CGSize)size {
+    CGRect frame = self.frame;
+    frame.size = size;
+    self.frame = frame;
+}
+
+- (CGFloat)height {
+    return self.frame.size.height;
+}
+
+- (void)setHeight:(CGFloat)h {
+    CGRect frame = [self frame];
+    frame.size.height = h;
+    self.frame = frame;
+}
+
+- (CGFloat)width {
+    return self.frame.size.width;
+}
+
+- (void)setWidth:(CGFloat)w {
+    CGRect frame = [self frame];
+    frame.size.width = w;
+    self.frame = frame;
+}
+
+- (CGPoint)origin {
+    return self.frame.origin;
+}
+
+- (void)setOrigin:(CGPoint)point {
+    CGRect frame = [self frame];
+    frame.origin = point;
+    self.frame = frame;
+}
+
+- (CGFloat)originX {
+    return self.frame.origin.x;
+}
+
+- (void)setOriginX:(CGFloat)x {
+    CGRect frame = [self frame];
+    frame.origin.x = x;
+    self.frame = frame;
+}
+
+- (CGFloat)originY {
+    return self.frame.origin.y;
+}
+
+- (void)setOriginY:(CGFloat)y {
+    CGRect frame = [self frame];
+    frame.origin.y = y;
+    self.frame = frame;
+}
+
+- (CGRect)getFrameWithRegionRect:(CGRect)rect
+                       ItemCount:(NSInteger)itemCount
+                 perRowItemCount:(NSInteger)perRowItemCount
+               perColumItemCount:(NSInteger)perColumItemCount
+                       itemWidth:(CGFloat)itemWidth
+                      itemHeight:(NSInteger)itemHeight
+                        paddingX:(CGFloat)paddingX
+                        paddingY:(CGFloat)paddingY
+                         atIndex:(NSInteger)index
+                          onPage:(NSInteger)page
+{
+    //1. 计算得到总共几行
+    NSUInteger rowCount = itemCount / perRowItemCount + (itemCount % perColumItemCount > 0 ? 1 : 0);
+    
+    //2. 得到顶部与底部的多余的高度
+    CGFloat insetY = (CGRectGetHeight(rect) - (itemHeight + paddingY) * rowCount) / 2.0;
+    
+    //3. 获取起点x坐标
+    CGFloat originX = (index % perRowItemCount) * (itemWidth + paddingX) + paddingX + (page * CGRectGetWidth(rect));
+    
+    //4. 获取起点y坐标
+    CGFloat originY = ((index / perRowItemCount) - perColumItemCount * page) * (itemHeight + paddingY) + paddingY;
+    
+    //5. 构造当前index的frame
+    CGRect itemFrame = CGRectMake(originX, originY + insetY, itemWidth, itemHeight);
+    
+    return itemFrame;
+}
+
+
+- (void)horizenLayoutSubviews {
+    
+    CGFloat x = 0;
+    CGFloat y = 0;
+    CGFloat w = self.width / self.subviews.count;
+    CGFloat h = self.height;
+    
+    for (NSInteger i = 0; i < self.subviews.count; i++) {
+        
+        UIView *subview = [self.subviews objectAtIndex:i];
+        
+        CGRect rect = CGRectMake(x + i * w,
+                                 y,
+                                 w,
+                                 h);
+        
+        subview.frame = rect;
+    }
+}
+
+@end
+```
+
+- 键盘底部选项卡容器View，里面添加多个按钮，水平等宽度布局，去掉按钮高亮状态，多个按钮同时只可以选中一个
+
+```
+#import "EmotionKeyboardTabView.h"
+
+#import "UIView+FrameExt.h"
+#import "UIButton+Factory.h"
+
+#import "CancelHilightEventButton.h"
+
+@interface EmotionKeyboardTabView ()
+
+//记录当前被点击选中的按钮
+@property (nonatomic, strong) CancelHilightEventButton *selectedButton;
+
+@end
+
+@implementation EmotionKeyboardTabView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self setupButtons];
+    }
+    return self;
+}
+
+//根据subview所在的位置，得到对应的背景图
+- (NSString *)getBackgroudImagePrefixNameWithSunbiewIndex:(NSInteger)index {
+    
+    NSString *prefix = @"";
+    
+    if (index == 0) {//最左边
+        prefix = @"compose_emotion_table_left";
+    } else if (index == 3) {//最右边
+        prefix = @"compose_emotion_table_right";
+    } else {//中间
+        prefix = @"compose_emotion_table_mid";
+    }
+    
+    return prefix;
+}
+
+- (void)setupButtons {
+    
+    NSArray *titles = @[@"最近",@"默认",@"Emoji",@"小浪花"];
+    
+    for (NSInteger index = 0; index < 4; index++) {
+        
+        NSString *prefix = [self getBackgroudImagePrefixNameWithSunbiewIndex:index];
+        NSString *bgNormal = [NSString stringWithFormat:@"%@_normal", prefix];
+        NSString *bgHilight = [NSString stringWithFormat:@"%@_selected", prefix];
+        
+        NSString *title = titles[index];
+        
+        CancelHilightEventButton *btn = [CancelHilightEventButton buttonWithTitle:title Target:self ClickSEL:@selector(buttonClick:) Normal:@"" Hilight:@"" NormalBG:bgNormal HilightBG:bgHilight NormalTextColor:[UIColor blackColor] HilightTextColor:[UIColor redColor] TouchEvent:UIControlEventTouchDown];
+        
+        //默认选中`默认`
+        if (index == 1) {
+            [self buttonClick:btn];
+        }
+        
+        [self addSubview:btn];
+        
+    }
+    
+}
+
+- (void)buttonClick:(CancelHilightEventButton *)btn {
+
+	//按钮的选中切换三部曲
+    
+    //1. 之前选中的按钮取消选中
+    self.selectedButton.selected = NO;
+    
+    //2. 新点击的按钮选中
+    btn.selected = YES;
+    
+    //3. 记录当前新点击的按钮作为被点击的按钮
+    self.selectedButton = btn;
+}
+
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    //调用UIView分类中的水平布局subviews的方法
+    [self horizenLayoutSubviews];
+}
+
+@end
+```
+
+****
+
+###读取表情文件
+
+####`每一个表情`都是使用`Info.plist`来配置
+
+- 这个是表情系列1，对每一个表情的配置项
+
+![](http://i12.tietuku.com/8ad4cf4fde60f72d.png)
+
+- 这个是表情系列2（emoji表情），对每一个表情的配置项
+
+![](http://i12.tietuku.com/dd56e5924099630f.png)
+
+####查看表情的plist文件、以及每一个表情对应的图片文件。emoji表情只提供plist文件，没有提供表情对应的图片。
+
+![](http://i12.tietuku.com/f0900d861146fc51.png)
+
+![](http://i12.tietuku.com/922f9c7b02d301f7.png)
+
+![](http://i12.tietuku.com/71042278b899f81c.png)
+
+####读取表情文件的`info.plist`
+
+- 将表情资源文件拖到磁盘目录之后，再直接拖入到Xcode工程
+
+![](http://i12.tietuku.com/1125d7686d649bb1.png)
+
+- App打包后，查看`Main Bundle`程序包目录结构是否为如下
+
+```
+- App名字（项目名）
+	- EmotionIcons 		（磁盘目录）
+		- default		（磁盘目录）
+		- emoji			（磁盘目录）
+		- lxh			（磁盘目录）
+```
+
+- 程序包目录结构对了之后，读取对应的目录下的info.plist加载表情
+
+```
+- (NSArray *)defaultArray {
+    if (!_defaultArray) {
+        NSString *path = [[NSBundle mainBundle] pathForResource:@"EmotionIcons/default/info.plist" ofType:nil];
+        _defaultArray = [NSArray arrayWithContentsOfFile:path];
+    }
+    return _defaultArray;
+}
+
+- (NSArray *)emojiArray {
+    if (!_emojiArray) {
+        NSString *path = [[NSBundle mainBundle] pathForResource:@"EmotionIcons/emoji/info.plist" ofType:nil];
+        _emojiArray = [NSArray arrayWithContentsOfFile:path];
+    }
+    return _emojiArray;
+}
+
+- (NSArray *)lxhArray {
+    if (!_lxhArray) {
+        NSString *path = [[NSBundle mainBundle] pathForResource:@"EmotionIcons/lxh/info.plist" ofType:nil];
+        _lxhArray = [NSArray arrayWithContentsOfFile:path];
+    }
+    return _lxhArray;
+}
+```
+
+###内部ScrollView布局每一个表情的思路
+
+![](http://i12.tietuku.com/bbc2c325330f33de.png)
+
+
+- `EmotionKeyboardContentView`内部包含两个subviews: 
+
+	- 1) `UIScrollView Container` 
+	- 2) `自定义显示原点图片的UIPageControl`
+
+```
+#import <UIKit/UIKit.h>
+
+/**
+ *  info.plit中的每一个表情配置项实体类
+ */
+@interface EmotionModel : NSObject
+
+//这两个key是给【default表情plist】和【lxh表情plist】
+@property (nonatomic, copy) NSString *chs;
+@property (nonatomic, copy) NSString *png;
+
+//这个key是给emoji表情plist
+@property (nonatomic, copy) NSString *code;
+
+@end
+
+//------------------------------------------------------
+
+/**
+ *  表情键盘上方显示所有表情的容器View
+ */
+@interface EmotionKeyboardContentView : UIView
+
+/**
+ *  传入表情模型数组
+ */
+@property (nonatomic, strong) NSArray *dataList;
+
+@end
+```
+
+```
+#import "EmotionKeyboardContentView.h"
+
+#import "EmotionKeyboardPageControl.h"
+#import "EmotionKeyboradContentContainerView.h"
+
+#import "UIColor+Extend.h"
+#import "UIView+FrameExt.h"
+
+#define kPageMaxCount 20
+
+@interface EmotionButton : UIButton
+
+@end
+
+@implementation EmotionButton
+
+@end
+
+@interface EmotionKeyboardContentView () <UIScrollViewDelegate>
+
+@property (nonatomic, strong) UIScrollView *scrollView;
+
+@property (nonatomic, strong) EmotionKeyboardPageControl *pageControl;
+
+@end
+
+@implementation EmotionKeyboardContentView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        
+        //1.
+        _pageControl = [[EmotionKeyboardPageControl alloc] init];
+        _pageControl.hidesForSinglePage = YES;
+//        _pageControl.backgroundColor = [UIColor redColor];
+        [self addSubview:_pageControl];
+        
+        //2. 注意，scrollView内部自带两个竖向和横向滚动的ImageView作为subview
+        _scrollView = [[UIScrollView alloc] init];
+        _scrollView.pagingEnabled = YES;
+        _scrollView.showsVerticalScrollIndicator = NO;//去掉竖向滚动条ImageView
+        _scrollView.showsHorizontalScrollIndicator = NO;//去掉横向滚动条ImageView
+//        _scrollView.backgroundColor = [UIColor blueColor];
+        _scrollView.delegate = self;
+        [self addSubview:_scrollView];
+    }
+    return self;
+}
+
+- (void)setDataList:(NSArray *)dataList {
+    
+    //1.
+    _dataList = dataList;
+    
+    //2. 设置pageControl显示原点数
+    _pageControl.numberOfPages = (_dataList.count + kPageMaxCount - 1) / kPageMaxCount;
+    
+    //3. 每一页使用一个单独的UIView容器
+    for (NSInteger i = 0; i < _pageControl.numberOfPages; i++) {
+        
+        //3.1 创建一个container，管理一个页面所有的表情按钮
+        EmotionKeyboradContentContainerView *container = [[EmotionKeyboradContentContainerView alloc] init];
+        [_scrollView addSubview:container];
+        
+       //3.2 获取当前页要显示的表情子数组的截取范围
+        NSRange subRange;
+        subRange.location = i * kPageMaxCount;//起点
+        
+        BOOL isLastPage = ((_dataList.count - subRange.location) < kPageMaxCount);
+        if (isLastPage) {//最后一页需要判断长度
+            subRange.length = (_dataList.count - subRange.location);
+        } else {
+            subRange.length = kPageMaxCount;
+        }
+        
+        //3.3 从dataList截取表情子数组
+        NSArray *subArray = [_dataList subarrayWithRange:subRange];
+        
+        //3.4 截取的子数组设置给容器View显示
+        [container setEmotions:subArray];
+    }
+    
+    //4. 重新计算frame
+    [self setNeedsLayout];
+}
+
+#pragma mark - 设置subviews的frame
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    CGFloat selfW = CGRectGetWidth(self.frame);
+    CGFloat selfH = CGRectGetHeight(self.frame);
+    
+    //1. 先确定底部固定高度的PageControl的frame
+    CGFloat pageControlX = 0;
+    CGFloat pageControlH = 44;
+    CGFloat pageControlY = selfH - pageControlH;
+    CGFloat pageControlW = selfW;
+    _pageControl.frame = CGRectMake(pageControlX, pageControlY, pageControlW, pageControlH);
+    
+    //2. 在确定上面的ScrollView的frame
+    CGFloat scrollViewX = 0;
+    CGFloat scrollViewY = 0;
+    CGFloat scrollViewW = selfW;
+    CGFloat scrollViewH = pageControlY;
+    _scrollView.frame = CGRectMake(scrollViewX, scrollViewY, scrollViewW, scrollViewH);
+    
+    //3. 布局scrollView内部每一页Container的frame
+    NSInteger index = 0;
+    for (UIView *container in _scrollView.subviews)
+    {
+        CGFloat containerX = selfW * index;
+        CGFloat containerY = 0;
+        CGFloat containerW = scrollViewW;
+        CGFloat containerH = scrollViewH;
+        
+        container.frame = CGRectMake(containerX, containerY, containerW, containerH);
+        
+        index++;
+    }
+    
+    //4. 设置scrollView的contensize
+    _scrollView.contentSize = CGSizeMake(_scrollView.subviews.count * scrollViewW, 0);
+}
+
+#pragma mark - UIScrollViewDelegate
+
+- (void)scrollViewDidScroll:(UIScrollView *)scrollView {
+    
+    //1. 获取当前scrollView滚动的x值，是在第几页
+    CGPoint point = scrollView.contentOffset;
+
+    //2.
+    if ((int)point.x < 0) {//滑动到最左边
+       
+        //2.1 得到最后一页的x
+        CGFloat lastPageX = scrollView.width * (scrollView.subviews.count - 1);
+        
+        //2.2 让ScrollView滚动到计算的x位置
+        [scrollView setContentOffset:CGPointMake(lastPageX, 0) animated:NO];
+        
+        //2.3 设置PageControl显示页号
+        _pageControl.currentPage = scrollView.subviews.count;
+        
+    }else if ((int)point.x > (scrollView.width * (scrollView.subviews.count - 1))) {//滑动到最右边
+        
+        //2.1
+        [scrollView setContentOffset:CGPointMake(0, 0) animated:NO];
+        
+        //2.2
+        _pageControl.currentPage = 0;
+        
+    } else {
+    
+        double pageNumber = point.x / scrollView.width;
+        
+        //2. 四舍五入计算的页号
+        int pageNo = (int)(pageNumber + 0.5);
+        
+        //3. 设置给UIPageControl显示页号
+        _pageControl.currentPage = pageNo;
+    }
+}
+
+@end
+
+@implementation EmotionModel
+
+@end
+```
+
+- 自定义的PageControl，使用KVC设置原点图片
+
+```
+#import <UIKit/UIKit.h>
+
+/**
+ *  表情键盘上显示分页控制器器
+ */
+@interface EmotionKeyboardPageControl : UIPageControl
+
+//没有选中时原点的图片
+@property (nonatomic, strong) UIImage *normalImage;
+
+//选中时原点的图片
+@property (nonatomic, strong) UIImage *selectedImage;
+
+@end
+```
+
+```
+#import "EmotionKeyboardPageControl.h"
+
+@implementation EmotionKeyboardPageControl
+
+- (UIImage *)normalImage {
+    UIImage *normal = [UIImage imageNamed:@"compose_keyboard_dot_normal"];
+    return normal;
+}
+
+- (UIImage *)hilightImage {
+    UIImage *hilight = [UIImage imageNamed:@"compose_keyboard_dot_selected"];
+    return hilight;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        
+        /**
+         *  使用KVC直接设置私有变量
+         */
+        [self setValue:[self normalImage] forKeyPath:@"_pageImage"];
+        [self setValue:[self hilightImage] forKeyPath:@"_currentPageImage"];
+    }
+    return self;
+}
+
+@end
+```
+
+- `EmotionKeyboradContentContainerView`内部包含一个UIScrollView，并接收一个`最大20个表情数组`.
+	
+```
+#import <UIKit/UIKit.h>
+
+@interface EmotionKeyboradContentContainerView : UIView
+
+@property (nonatomic, strong) NSArray *emotions;
+
+@end
+```
+
+```
+#import "EmotionKeyboradContentContainerView.h"
+#import "UIColor+Extend.h"
+
+@implementation EmotionKeyboradContentContainerView {
+    
+    NSInteger _rowCount;
+    NSInteger _colCount;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        
+        self.backgroundColor = [UIColor randomColor];
+        
+        //每行显示七个表情
+        _rowCount = 7;
+        
+        //每列显示三个
+        _colCount = 3;
+        
+        //那么总共显示21个表情
+        //但是每页只显示20个表情
+        //每一页最后空出来的右下角的位置，放删除按钮
+    }
+    return self;
+}
+
+- (void)setEmotions:(NSArray *)emotions {
+    _emotions = emotions;
+    
+    //1. 依次创建表情按钮subview
+    for (NSInteger i = 0; i < emotions.count; i++) {
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+        btn.backgroundColor = [UIColor randomColor];
+        [self addSubview:btn];
+    }
+    
+    //2. 重新计算frame
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    //四周的内边距
+    CGFloat inset = 25;
+    
+    //每个按钮的宽度
+    CGFloat btnW = (CGRectGetWidth(self.frame) - 2 * inset) / _rowCount;
+    
+    //每个按钮的高度
+    CGFloat btnH = (CGRectGetHeight(self.frame) - 2 * inset) / _colCount;
+    
+    NSInteger count = _emotions.count;
+    
+    //依次设置被加入的所有按钮的frame
+    for (NSInteger i = 0; i < count; i++)
+    {
+        UIButton *btn = [self.subviews objectAtIndex:i];
+        
+        //所在行号
+        NSInteger rowNo = i / _rowCount;
+        
+        //所在列号
+        NSInteger colNo = i % _rowCount;
+        
+        //x坐标
+        CGFloat btnX = inset + btnW * colNo;
+        
+        //y坐标
+        CGFloat btnY = inset + btnH * rowNo;
+        
+        CGRect rect = CGRectMake(btnX, btnY, btnW, btnH);
+        
+        btn.frame = rect;
+    }
+
+}
+
+@end
+```
+
+- 图示效果
+
+![](http://i12.tietuku.com/13710bbad82028db.png)
+
+![](http://i12.tietuku.com/3e022f9015c517be.png)
+
+![](http://i12.tietuku.com/5fccdb55210f7725.png)
+
+####接着上面在每一个表情按钮上填充图像
+
+- 第一种、`非emoji`表情，已经给出了对于每一种表情的`png图片`
+
+![](http://i5.tietuku.com/fb49b514fe37b43d.png)
+
+![](http://i5.tietuku.com/fb49b514fe37b43d.png)
+
+- 第二种、`emoji`表情，`并没有`给出了对于每一种表情的`png图片`，只是一个`十六进制的数字`
+
+![](http://i5.tietuku.com/180ae0b0126a93eb.png)
+
+- 修改`EmotionKeyboradContentContainerView.m`如下代码
+
+```
+- (void)setEmotionModle:(EmotionModel *)model Button:(UIButton *)btn {
+    
+    //1. 显示emoji表情（显示的是一串`文字`）
+    if (model.code && ![model.code isEqualToString:@""]) {
+        //1. 第一步、将emoji十六进制数字，解析成字符串
+        NSString *deCodeStr = [model.code emoji];
+        
+        //2. 第二步、将字符串设置给按钮的标题
+        [btn setTitle:deCodeStr forState:UIControlStateNormal];
+        
+        return;
+    }
+    
+    //2. 非emoji，直接由png属性显示图片
+    UIImage *emotionImage = [UIImage imageNamed:model.png];
+    [btn setImage:emotionImage forState:UIControlStateNormal];
+}
+```
+
+***
+
+###在网络上进行传输时，传输的是文字对应的`十六进制数字`，并不是直接传输图片或者字符串内容，大大减小流量
+
+****
+
+###完成点击如上的表情按钮弹出一个View显示表情
+
+####效果图
+
+![](http://i12.tietuku.com/c09ee0333cf59abf.png)
+
+####自定义一个UIImangeView子类，显示放大镜的图片，并且显示表情图片
+
+```
+#import <UIKit/UIKit.h>
+
+/**
+ *  每一个表情按钮被触摸时弹出显示的View
+ */
+@interface EmotionTouchDownView : UIImageView
+
++ (UIImage *)bgImage;
+
+@end
+```
+
+```
+#import "EmotionTouchDownView.h"
+
+@interface EmotionTouchDownView ()
+
+@property (nonatomic, strong) UIButton *button;
+
+@end
+
+@implementation EmotionTouchDownView
+
++ (UIImage *)bgImage {
+    return [UIImage imageNamed:@"emoticon_keyboard_magnifier"];
+}
+
+- (instancetype)initWithImage:(UIImage *)image {
+    self = [super initWithImage:image];
+    if (self) {
+        [self initSubviews];
+    }
+    return self;
+}
+
+- (void)initSubviews {
+    
+    //添加一个按钮，用来显示被点击的表情图片
+    _button = [UIButton buttonWithType:UIButtonTypeCustom];
+    [self addSubview:_button];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    CGFloat btnW = [[self class] bgImage].size.width;
+    CGFloat btnH = [[self class] bgImage].size.height / 2.0 - 10;
+    
+    _button.frame = CGRectMake(0, 0, btnW, btnH);
+    
+    CGFloat btnCenterX = CGRectGetWidth(self.frame) / 2.0;
+    CGFloat btnCenterY = [[self class] bgImage].size.height / 2.0;
+    CGPoint center = CGPointMake(btnCenterX, btnCenterY);
+    _button.center = center;
+}
+
+@end
+```
+
+####修改`EmotionKeyboradContentContainerView`，内部完成添加所有的表情按钮，所以在这里加上处理按钮事件的代码
+
+```
+#pragma mark - Button Action
+
+- (void)buttonClick:(UIButton *)button
+{
+    //1. 移除之前显示的放大镜View
+    [self.touchDownView removeFromSuperview];
+    
+    //2. 添加到当前container view上
+    [self addSubview:self.touchDownView];
+    
+    //3. 记录被点击的按钮
+    _clickButton = button;
+    
+    //4. 重新计算frame
+    [self setNeedsLayout];
+}
+
+```
+
+```
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    //1. 先布局20个表情按钮
+    [self layoutAllEmotionButtons];
+    
+    //2. 布局弹出的表情View
+    [self layoutTouchDownView];
+}
+
+- (void)layoutAllEmotionButtons {
+    
+    //四周的内边距
+    CGFloat inset = 25;
+    
+    //每个按钮的宽度
+    CGFloat btnW = (CGRectGetWidth(self.frame) - 2 * inset) / _rowCount;
+    
+    //每个按钮的高度
+    CGFloat btnH = (CGRectGetHeight(self.frame) - 2 * inset) / _colCount;
+    
+    NSInteger count = _emotions.count;
+    
+    //依次设置被加入的所有按钮的frame
+    for (NSInteger i = 0; i < count; i++)
+    {
+        UIButton *btn = [self.subviews objectAtIndex:i];
+        
+        //所在行号
+        NSInteger rowNo = i / _rowCount;
+        
+        //所在列号
+        NSInteger colNo = i % _rowCount;
+        
+        //x坐标
+        CGFloat btnX = inset + btnW * colNo;
+        
+        //y坐标
+        CGFloat btnY = inset + btnH * rowNo;
+        
+        CGRect rect = CGRectMake(btnX, btnY, btnW, btnH);
+        
+        btn.frame = rect;
+    }
+}
+
+- (void)layoutTouchDownView {
+    
+    //1. 获取被点击的表情按钮的坐标
+    CGFloat clickButtonCenterX = CGRectGetMidX(_clickButton.frame);
+    CGFloat clickButtonCenterY = CGRectGetMidY(_clickButton.frame);
+    
+    //2. 计算弹出View的坐标
+    CGFloat touchViewCnterX = clickButtonCenterX;
+    CGFloat touchViewY = clickButtonCenterY - CGRectGetHeight(self.touchDownView.frame);
+    
+    self.touchDownView.centerX = touchViewCnterX;
+    self.touchDownView.originY = touchViewY;
+}
+```
+
+####修改后的效果图，发现点击最顶部的按钮时，不能出现放大镜View，被挡住了一部分。
+
+![](http://i12.tietuku.com/7d1372273232c293.png)
+
+
+####那么就需要把放大镜View添加到当前App程序的`最上面的window`中
+
+```
+#pragma mark - Button Action
+
+- (void)buttonClick:(UIButton *)button
+{
+    //1.
+    [self.touchDownView removeFromSuperview];
+    
+    //2.1 添加到当前View上，存在一个问题，就是点击最顶部的表情按钮时，touchDownView不能显示完全
+//    [self addSubview:self.touchDownView];
+    
+    //2.2 也不能添加到keyWindow，因为当前弹出了键盘，而键盘所在window在最上面
+    //...
+    
+    //2.3 只能添加到键盘View所在的window
+    UIWindow *window = [[UIApplication sharedApplication].windows lastObject];
+    NSLog(@"window = %@\n", window);
+    [window addSubview:self.touchDownView];
+    
+    //3.
+    _clickButton = button;
+    
+    //4.
+    [self setNeedsLayout];
+}
+```
+
+####然后布局frame中，也需要转换坐标系，因为被添加到UIWindow中去了。我们需要将被点击按钮的frame，相对UIWindow作为坐标系，进行转换frame.
+
+```
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    //1. 先布局20个表情按钮
+    [self layoutAllEmotionButtons];
+    
+    //2. 布局弹出的表情View
+    [self layoutTouchDownView];
+}
+
+- (void)layoutAllEmotionButtons {
+
+//..略
+//因为代码不变
+
+}
+
+- (void)layoutTouchDownView {
+    
+    //1. 计算弹出View的坐标
+    
+    //这样得到的按钮的y值，是相对当前View对象，而不是UIWindow
+    //CGFloat clickButtonCenterX = CGRectGetMidX(_clickButton.frame);
+    //CGFloat touchViewCnterX = clickButtonCenterX;
+    //CGFloat touchViewY = clickButtonCenterY - CGRectGetHeight(self.touchDownView.frame);
+    
+    //1.1 将当前被点击按钮的frame，转换成相对UIWindow的坐标系的frame
+    CGRect convertRect = [_clickButton convertRect:_clickButton.bounds toView:self.touchDownView.superview];
+    
+    //1.2
+    CGFloat touchViewCnterX = CGRectGetMidX(convertRect);
+    
+    //1.3
+    CGFloat touchViewY = CGRectGetMidY(convertRect) - CGRectGetHeight(self.touchDownView.frame);
+    
+    //2. 设置frame
+    self.touchDownView.centerX = touchViewCnterX;
+    self.touchDownView.originY = touchViewY;
+}
+```
+
+####修改后的效果图
+
+![](http://i12.tietuku.com/344a4be7db6bb5c3.jpg)
+
+****
+
+###遇到的问题
+
+- 一个ViewController的view添加另一个ViewController的View
+
+```
+UIViewController *vc1 = [[UIViewController alloc]  init];
+UIViewController *vc2 = [[UIViewController alloc]  init];
+
+//1.     
+[vc1.view addSubview:vc2.view];
+
+//2. 必须写，这样vc1处理到一些事件时，也能够传递给vc2
+[vc1 addChildViewController:vc2];
+```
+
+- 替换UIPageControl小圆点的两个状态的图片
+
+```
+#import <UIKit/UIKit.h>
+
+/**
+ *  表情键盘上显示分页控制器器
+ */
+@interface EmotionKeyboardPageControl : UIPageControl
+
+//没有选中时原点的图片
+@property (nonatomic, strong) UIImage *normalImage;
+
+//选中时原点的图片
+@property (nonatomic, strong) UIImage *selectedImage;
+
+@end
+```
+
+```
+#import "EmotionKeyboardPageControl.h"
+
+@implementation EmotionKeyboardPageControl
+
+- (UIImage *)normalImage {
+    UIImage *normal = [UIImage imageNamed:@"compose_keyboard_dot_normal"];
+    return normal;
+}
+
+- (UIImage *)hilightImage {
+    UIImage *hilight = [UIImage imageNamed:@"compose_keyboard_dot_selected"];
+    return hilight;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        
+        /**
+         *  使用KVC直接设置私有变量
+         */
+        [self setValue:[self normalImage] forKeyPath:@"_pageImage"];
+        [self setValue:[self hilightImage] forKeyPath:@"_currentPageImage"];
+    }
+    return self;
+}
+
+@end
+```
+
+###`CUICatalog: Invalid asset name supplied:`错误警告
+
+```
+加载了一个不存在的图片文件
+
+如:
+
+UIImage *image = [UIImage ImageNamed:@"不存在的图片"];
+
+就会报如上警告.
+```
+
+
+###UITextView基础使用
+
+
+```
+UITextView *textview = [[UITextView alloc] initWithFrame:CGRectMake(20, 10, 280, 30)];
+textview.backgroundColor=[UIColor whiteColor]; //背景色
+textview.scrollEnabled = NO;    //当文字超过视图的边框时是否允许滑动，默认为“YES”
+textview.editable = YES;        //是否允许编辑内容，默认为“YES”
+textview.delegate = self;       //设置代理方法的实现类
+textview.font=[UIFont fontWithName:@"Arial" size:18.0]; //设置字体名字和字体大小;
+textview.returnKeyType = UIReturnKeyDefault;//return键的类型
+textview.keyboardType = UIKeyboardTypeDefault;//键盘类型
+textview.textAlignment = NSTextAlignmentLeft; //文本显示的位置默认为居左
+textview.dataDetectorTypes = UIDataDetectorTypeAll; //显示数据类型的连接模式（如电话号码、网址、地址等）
+textview.textColor = [UIColor blackColor];
+textview.text = @"UITextView详解";//设置显示的文本内容
+[self.view addSubview:textview];
+```
+
+###UITextView的代理方法如下
+
+```
+//将要开始编辑
+- (BOOL)textViewShouldBeginEditing:(UITextView *)textView;
+
+//将要结束编辑
+- (BOOL)textViewShouldEndEditing:(UITextView *)textView;
+
+//开始编辑
+- (void)textViewDidBeginEditing:(UITextView *)textView;
+
+//结束编辑
+- (void)textViewDidEndEditing:(UITextView *)textView;
+
+//内容将要发生改变编辑
+- (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text;
+
+//内容发生改变编辑
+- (void)textViewDidChange:(UITextView *)textView;
+
+//焦点发生改变
+- (void)textViewDidChangeSelection:(UITextView *)textView;
+```
+
+###让UITextView自适应输入的文本的内容的高度
+
+```
+只要在textViewDidChange的代理方法中加入调整控件大小
+
+- (void)textViewDidChange:(UITextView *)textView{
+	
+	//1. 设置TextView文字显示的最大宽度和最大高度
+    CGSize constraintSize;
+    constraintSize.width = textView.frame.size.width-16;
+    constraintSize.height = MAXFLOAT;
+    
+    //2. 计算文本内容的高度
+    //调用上面写的字符串计算Size的方法
+    CGSize size = ...;
+    
+    //3. 重新调整textView的高度
+    CGFloat x = textView.frame.origin.x;
+    CGFloat y = textView.frame.origin.y;
+    CGFloat w = textView.frame.size.width;
+    CGFloat h = size.height;//计算得到的高度
+    
+    textView.frame = CGRectMake(x,y,w,h);
+}
+```
+
+###UITextView在光标所在处插入内容字符串
+
+```
+UITextView *textView = ....;
+
+//使用如下方法即可
+[textView insertText:@""];
+```
+
+###UITextView往回删除内容
+
+```
+[UITextView实例 deleteBackward];
+```
+
+###将UITextView内部表情图片、Emoji文字表情、其他富文本字符串，转换成一个统一的普通字符串NSString
+
+```
+@interface SenWeiboView : UITextView
+
+
+/**
+ *  将UITextView内部的富文本字符串转换成普通字符串
+ *
+ *      1. emoji字符串
+ *      2. 图片富文本字符串
+ */
+- (NSString *)stringValue;
+
+@end
+```
+
+```
+@implementation SenWeiboView
+
+- (NSString *)stringValue
+{
+    NSMutableString *mStr = [[NSMutableString alloc] init];
+    
+    //遍历UItextView的富文本字符串
+    //每一个富文本字符串会被分成一段
+    [self.attributedText enumerateAttributesInRange:NSMakeRange(0, self.attributedText.length)
+                                            options:0
+                                         usingBlock:^(NSDictionary<NSString *,id> * _Nonnull attrs,
+                                                      NSRange range,
+                                                      BOOL * _Nonnull stop)
+    {
+        //是否是图片附件富文本
+        NSTextAttachment *attachment = attrs[@"NSAttachment"];
+        
+        if (attachment) {
+            //是图片附件富文本
+            //将图片富文本转换成对应的普通字符串
+            //1. 浪小花表情图片
+            //2. 默认表情图片
+            //3. 得到对应的info.plist中定义的字符串
+            //4. 拼接到mStr
+        } else {
+            //不是图片附件富文本
+            //1. emoji文字表情
+            //2. 普通富文本（字体、效果...）
+            NSAttributedString *attsStr = [self.attributedText attributedSubstringFromRange:range];
+            //3. 转换成普通字符串
+            NSString *normalStr = [attsStr string];
+            //4. 拼接到mStr
+            [mStr appendString:normalStr];
+        }
+    }];
+    
+    return [mStr copy];
+}
+
+@end
+```
+
+###UITextView的如下两个属性
+
+```
+//1. 这个属性可以设置UITextView内部内容选中范围
+self.selectedRange;
+    
+//2. 这个属性不可以设置，但是通过修改上面的属性，达到修改这个属性
+self.selectedTextRange;
+```
+
+###UITextView内部特殊文字点击做出响应的思路
+
+```
+NSArray *frameArray = [UITextView对象 selectionRectsForRange:<#(nonnull UITextRange *)#>]
+```
+
+```
+@implementation MyTextView
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    
+    //1. 取出点击的Point
+    CGPoint pt = [[touches anyObject] locationInView:self];
+    
+    //2. 假设值某一串特殊字符的Range（如: http://dawdawd.com.dawd/）
+    //这里需要在获取当前UITextView内部所有的特殊字符串的Range，并使用数组保存起来
+    NSRange range;
+    
+    //3. 让UITextView选中这个range的内容
+    self.selectedRange = range;
+    
+    //4. 得到TextView内部被点击的所有范围
+    NSArray *rects = [self selectionRectsForRange:self.selectedTextRange];
+    
+    //5. 取消TextView选中范围
+    self.selectedRange = NSMakeRange(0, 0);
+    
+    //6. 遍历得到的所有Rect，看当前点击的Point是在哪一个Rect
+    for (UITextSelectionRect *selectionRect in rects) {
+
+        CGRect rect = selectionRect.rect;
+        
+        if (rect.size.width == 0 || rect.size.height == 0) continue;
+        
+        //看当前遍历的Rect是否包含当前触摸的Point
+        if (CGRectContainsPoint(rect, pt))
+        {
+            
+            NSLog(@"找到被点击的特殊字符的Rect了\n");
+            
+            break;
+        }
+        
+    }
+}
+
+@end
+```
+
+****
+
+###小结: Frame和显示的数据 随实体对象数据改变而动态更新的代码模板
+
+```objc
+#import <UIKit/UIKit.h>
+#import "User.h"
+
+@interface DemoView : UIView
+
+@property (nonatomic, strong) User *user;
+
+@end
+```
+
+```objc
+
+#import "DemoView.h"
+
+@interface DemoView ()
+
+@property (nonatomic, strong) UILabel *label;
+
+@end
+
+@implementation DemoView
+
+/**
+ *	重写实体对象的setter
+ */
+- (void)setUser:(User *)user {
+    
+    //1.
+    _user = user;
+    
+    //2. 更新UI的数据
+    [_label setText:user.screen_name];
+    
+    //3. 通知系统重新计算当前DemoView的frame
+    [self setNeedsLayout];
+}
+
+/**
+ *  所有subviews的frame计算代码，都放在这里
+ *  一旦调用setNeedsLayout方法，这个方法就会被执行
+ */
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    /**
+     *  计算所有Subviews的frame
+     */
+    CGFloat x = 0;
+    CGFloat y = 0;
+    CGFloat w = CGRectGetWidth(self.frame);
+    CGFloat h = CGRectGetHeight(self.frame);
+    
+    _label.frame = CGRectMake(x, y, w, h);
+}
+
+@end
+```
+
+###如果是需要通过drawRect形式绘制
+
+
+```objc
+#import "DemoView.h"
+
+@interface DemoView ()
+
+@property (nonatomic, strong) UILabel *label;
+
+@end
+
+@implementation DemoView
+
+- (void)setUser:(User *)user {
+    
+    //1.
+    _user = user;
+    
+    //2. 更新UI的数据
+    [_label setText:user.screen_name];
+    
+    //3. 通知系统重新计算当前DemoView的frame
+    [self setNeedsLayout];
+    
+    //4. 通知系统重新绘制DemoView内部元素
+    [self setNeedsDisplay];
+    
+}
+
+/**
+ *  所有subviews的frame计算代码，都放在这里
+ *  一旦调用setNeedsLayout方法，这个方法就会被执行
+ */
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    /**
+     *  计算所有Subviews的frame
+     */
+    CGFloat x = 0;
+    CGFloat y = 0;
+    CGFloat w = CGRectGetWidth(self.frame);
+    CGFloat h = CGRectGetHeight(self.frame);
+    
+    _label.frame = CGRectMake(x, y, w, h);
+}
+
+- (void)drawRect:(CGRect)rect
+{
+    //dwawRect:方法每次执行时
+    //1. 会全部清除掉，之前画布上的所有图像全部
+    //2. 再将新的图像绘制上去
+    
+    if (!self.hasText) {
+        
+        NSDictionary *attr = @{
+                               NSFontAttributeName : [UIFont systemFontOfSize:14.f]
+                               };
+        
+        //drawAtPoint:只会单行绘制
+        //[_placeHolder drawAtPoint:CGPointZero withAttributes:attr];
+        
+        //drawInRect:在制定的CGRect内部绘制
+        CGFloat placeX = 5;
+        CGFloat placeY = 5;【必须指定y坐标大于0，才会显示文字，否则向上偏移64】
+        CGFloat placeW = rect.size.width - 2 * 5;
+        CGFloat placeH = rect.size.height - 2 * 5;
+        CGRect placeRect = CGRectMake(placeX, placeY, placeW, placeH);
+        [_placeHolder drawInRect:placeRect withAttributes:attr];
+        
+        //注意如下直接在画布区域绘制显示不出来
+        //原因: 系统传入的rect在有导航栏时，rect.y向上偏移64，所以看不到
+        //所以要让文字看到，必须指定绘制rect.y >= 0，才会显示处理啊
+        //[_placeHolder drawInRect:rect withAttributes:attr];
+    }
+}
+
+
+@end
+```
+

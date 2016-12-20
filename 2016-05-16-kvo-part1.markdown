@@ -1,0 +1,914 @@
+---
+layout: post
+title: "KVO Part1"
+date: 2016-05-16 23:09:55 +0800
+comments: true
+categories: 
+---
+
+###也是关于周末看NSProgress使用中看到了一些关于KVO的一些东西，之前自己其实也对KVO知道的挺少的，一直停留在KVO就是重写了setter方法实现，然后发送KVO通知。
+
+***
+
+###仍然打开苹果开发文档进去看下KVO的描述介绍
+
+https://developer.apple.com/library/mac/documentation/Cocoa/Reference/Foundation/Protocols/NSKeyValueObserving_Protocol/
+
+> The addObserver:forKeyPath:options:context: method establishes a connection between the instances of the objects that you specify. A connection is not established between the two classes, but rather between the two specified instances of the objects.
+
+就是说KVO只针对`对象`的属性值监测，并不支持`类`，然后注册KVO的代码模板。
+
+```objc
+static void *KVOContext = &KVOContext;
+```
+
+```objc
+[Person对象 addObserver:self
+               forKeyPath:@"car.price"
+                  options:NSKeyValueObservingOptionInitial
+                  context:KVOContext];
+```
+
+> In order to respond to change notifications, the observer must implement the observeValueForKeyPath:ofObject:change:context: method. This method implementation defines how the observer responds to change notifications. It is in this method that you can customize your response to a change in one of the observed properties.
+
+这句话就很简单了，就是要实现对应的KVO回调函数.
+
+> Automatic key-value observing is implemented using a technique called isa-swizzling.
+
+KVO属性观察实现是使用 **isa-swizzling**（类似method-swizzling），就是调换isa的指向。
+
+(https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueObserving/Articles/KVOImplementation.html#//apple_ref/doc/uid/20002307-BAJEAIEE)
+
+> The isa pointer, as the name suggests, points to the object's class which maintains a dispatch table. This dispatch table essentially contains pointers to the methods the class implements, among other data.
+
+
+上面一段话主要有几个重要点:
+
+- 第一点、isa就是一个指针（`objc_class *`）.
+
+```objc
+Class	isa;
+```
+
+```objc
+typedef struct objc_class *Class;
+```
+
+刚开始接触OC的时候，觉得很奇怪，NSObject类/对象的isa指针，居然指向一个c结构体实例....
+
+- 第二点、有一张`表`来记录isa所指向的class
+
+- 第三点、被指向的class具体说是一个`objc_class`结构体的实例，包含了所有的方法结构体`objc_method`实例
+
+> When an observer is registered for an attribute of an object the isa pointer of the observed object is modified, pointing to an intermediate class rather than at the true class. As a result the value of the isa pointer does not necessarily reflect the actual class of the instance.
+
+**这句话就非常重要了**
+
+- 当一个对象object添加一个观察者observer对象，来注册监听object的某一个属性时.
+- 这个对象object的`isa指针的指向会被修改`.
+- isa指针会被指向`另一个中间类`，而不再指向object原来所属的类.
+- 此时该objet对象的isa指针所指向的值，并不能够真实的反应此时object真实的类型.
+
+> You should never rely on the isa pointer to determine class membership. Instead, you should use the class method to determine the class of an object instance.
+
+你不应该依赖isa指针来找到类的成员，而是应该使用原来类中声明的`方法`完成一些操作.（因为此时被监听的对象的类已经被替换了）
+
+****
+
+###Registering Dependent Keys
+
+https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueObserving/Articles/Articles/KVODependentKeys.html#//apple_ref/doc/uid/20002179-BAJEAIEE
+
+顾名思义，就是带有依赖性的属性值的修改监测，如下以一个按照官方demo示例写的例子看下即可。
+
+> To-one Relationships
+
+####第一个具有依赖属性的实体类.
+
+```objc
+@interface Person : NSObject
+
+@property (nonatomic, copy) NSString *fullname;
+
+@property (nonatomic, copy) NSString *firstname;
+@property (nonatomic, copy) NSString *lastname;
+
+@end
+```
+
+```objc
+@implementation Person
+
+// fullname = firstname + lastname
+- (NSString *)fullname {
+    return [NSString stringWithFormat:@"%@_%@", _firstname, _lastname];
+}
+
+// 方法一、重写系统的方法
++ (NSSet<NSString *> *)keyPathsForValuesAffectingValueForKey:(NSString *)key {
+    //1. 一定要写
+    NSSet *keyPaths = [super keyPathsForValuesAffectingValueForKey:key];
+    
+    //2. specifying that the fullname property of a person is dependent on the firstname and lastname properties
+    if ([key isEqualToString:@"fullname"]) {
+        NSArray *affectingKeys = @[@"firstname", @"lastname"];
+        keyPaths = [keyPaths setByAddingObjectsFromArray:affectingKeys];
+    }
+    
+    return keyPaths;
+}
+
+// 方法二、重写编译器分配给fullname树形的方法
+//+ (NSSet *)keyPathsForValuesAffectingFullname {
+//    return [NSSet setWithObjects:@"firstname", @"lastname", nil];
+//}
+
+@end
+```
+
+总之就是告诉系统，当firstname和lastname属性值发生变化时，会触发fullname属性值变化的回调处理.
+
+####然后是测试监听Person类的fullname属性值改变
+
+```objc
+static void *PersonKVOContext = &PersonKVOContext;
+
+@implementation ViewController {
+    Person *_person;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    _person = [Person new];
+    _person.firstname = @"Xiong";
+    _person.lastname = @"Zenghui";
+    
+    // 添加对Person对象的 fulllname 这个依赖属性的KVO监测
+    [_person addObserver:self
+              forKeyPath:@"fullname"
+                 options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
+                 context:PersonKVOContext];
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+	
+	// 修改 firstname属性值，自动触发 fullname属性的KVO通知
+    _person.firstname = [NSString stringWithFormat:@"%u" , arc4random()];    
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSString *,id> *)change context:(void *)context
+{
+    if (context == PersonKVOContext) {
+        NSString *newFullName = change[@"new"];
+        NSString *oldFullName = change[@"old"];
+        NSLog(@"newFullName: %@, oldFullName: %@", newFullName, oldFullName);
+    }
+}
+
+@end
+```
+
+运行后点击屏幕后输出
+
+```
+2016-05-18 15:44:46.169 demo[36996:466536] newFullName: 338122486_Zenghui, oldFullName: Xiong_Zenghui
+2016-05-18 15:44:51.116 demo[36996:466536] newFullName: 1037617220_Zenghui, oldFullName: 338122486_Zenghui
+2016-05-18 15:44:52.150 demo[36996:466536] newFullName: 3819958628_Zenghui, oldFullName: 1037617220_Zenghui
+```
+
+对上面的KVO回调函数使用`Context指针`来判断之外，还有一种使用`被修改的对象类型`来判断（摘录自AFNetworking）
+
+```objc
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSString *,id> *)change context:(void *)context {
+    
+    if ([object isKindOfClass:[NSURLSessionTask class]] || [object isKindOfClass:[NSURLSessionDownloadTask class]])
+    {
+        // 被修改的是 Task对象
+        if ([keyPath isEqualToString:NSStringFromSelector(@selector(countOfBytesReceived))]) {
+            self.downloadProgress.completedUnitCount = [change[NSKeyValueChangeNewKey] longLongValue];
+        } else if ([keyPath isEqualToString:NSStringFromSelector(@selector(countOfBytesExpectedToReceive))])
+         {
+         	// Task对象的countOfBytesExpectedToReceive属性值被修改
+            self.downloadProgress.totalUnitCount = [change[NSKeyValueChangeNewKey] longLongValue];
+        } else if ([keyPath isEqualToString:NSStringFromSelector(@selector(countOfBytesSent))]) 
+        {
+        	// Task对象的countOfBytesSent属性值被修改
+            self.uploadProgress.completedUnitCount = [change[NSKeyValueChangeNewKey] longLongValue];
+        } else if ([keyPath isEqualToString:NSStringFromSelector(@selector(countOfBytesExpectedToSend))]) 
+        {
+			// Task对象的countOfBytesExpectedToSend属性值被修改
+            self.uploadProgress.totalUnitCount = [change[NSKeyValueChangeNewKey] longLongValue];
+        }
+    }
+    else if ([object isEqual:self.downloadProgress]) {
+        // 被修改的是 下载progress对象
+        if (self.downloadProgressBlock) {
+            self.downloadProgressBlock(object);
+        }
+    }
+    else if ([object isEqual:self.uploadProgress]) {
+        // 被修改的是 上传progress对象
+        if (self.uploadProgressBlock) {
+            self.uploadProgressBlock(object);
+        }
+    }
+}
+```
+
+先判断被修改的对象类型，再判断被修改对象的哪一个keyPath.
+
+其他就没什么好说的了，就是依赖属性的KVO监测使用，但是有一个注意的地方，就是不要使用`Category分类`方式去实现KVO回调函数.
+
+You can't override the keyPathsForValuesAffectingValueForKey: method when you add a computed property to an existing class using a category, because you're not supposed to override methods in categories. In that case, implement a matching keyPathsForValuesAffecting<Key> class method to take advantage of this mechanism.
+
+> To-many Relationships
+
+The `keyPathsForValuesAffectingValueForKey:` method does not support key-paths that `include a to-many relationship`.
+
+意思就是说，一个属性是一对多的关系（NSArray、NSSet）等时，`keyPathsForValuesAffectingValueForKey:`不支持。
+
+那么同样以一个例子来看下使用.
+
+####实体类Person
+
+```objc
+#import <Foundation/Foundation.h>
+#import "Car.h"
+
+@interface Person : NSObject
+
+// to-one: 
+@property (nonatomic, copy) NSString *fullname;
+@property (nonatomic, copy) NSString *firstname;
+@property (nonatomic, copy) NSString *lastname;
+
+// to-many: 
+@property (nonatomic, strong) NSArray <Car *>*cars;
+
+// 根据cars数组保存的Car对象个数变化而变化
+@property (nonatomic, assign) long long totalPrice;
+
+- (void)addCar:(Car *)car;
+- (void)removeCar:(Car *)car;
+
+@end
+
+#import "Person.h"
+
+static void *Person_cars_KVOContext = &Person_cars_KVOContext;
+
+@interface Person ()
+
+@property (nonatomic, strong) NSMutableArray <Car *>* mutable_cars;
+
+@end
+```
+
+```objc
+#import "Person.h"
+
+static void *Person_cars_KVOContext = &Person_cars_KVOContext;
+
+@interface Person ()
+
+@property (nonatomic, strong) NSMutableArray <Car *>* mutable_cars;
+
+@end
+
+@implementation Person
+
+- (NSMutableArray<Car *> *)mutable_cars {
+    if (!_mutable_cars) {
+        _mutable_cars = [NSMutableArray new];
+    }
+    return _mutable_cars;
+}
+
+- (NSArray<Car *> *)cars {
+    return [self.mutable_cars copy];
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    if (self) {
+    
+		// 注册对 mutable_cars属性值变化监听
+        [self addObserver:self
+               forKeyPath:@"mutable_cars"
+                  options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
+                  context:Person_cars_KVOContext];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [self removeObserver:self forKeyPath:@"cars"];
+}
+
+- (NSString *)fullname {
+    return [NSString stringWithFormat:@"%@_%@", _firstname, _lastname];
+}
+
+// 方法一、
+//+ (NSSet<NSString *> *)keyPathsForValuesAffectingValueForKey:(NSString *)key {
+//    //1. 一定要写
+//    NSSet *keyPaths = [super keyPathsForValuesAffectingValueForKey:key];
+//    
+//    //2. specifying that the fullname property of a person is dependent on the firstname and lastname properties
+//    if ([key isEqualToString:@"fullname"]) {
+//        NSArray *affectingKeys = @[@"firstname", @"lastname"];
+//        keyPaths = [keyPaths setByAddingObjectsFromArray:affectingKeys];
+//    }
+//    
+//    return keyPaths;
+//}
+
+// 方法二、
++ (NSSet *)keyPathsForValuesAffectingFullname {
+    return [NSSet setWithObjects:@"firstname", @"lastname", nil];
+}
+
+// 告诉系统totalPrice属性KVO通知，依赖于 mutable_cars数组中每一个对象的price属性值的变化
++ (NSSet *)keyPathsForValuesAffectingTotalPrice {
+    return [NSSet setWithObjects:@"mutable_cars.price", nil];
+}
+
+- (void)addCar:(Car *)car {
+//    [_mutable_cars addObject:car];  直接这么写不会触发KVO通知
+    [[self mutableArrayValueForKey:@"mutable_cars"] addObject:car];
+}
+
+- (void)removeCar:(Car *)car {
+//    [_mutable_cars removeObject:car]; 直接这么写不会触发KVO通知
+    [[self mutableArrayValueForKey:@"mutable_cars"] removeObject:car];
+}
+
+#pragma mark - kvo callback
+
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSString *,id> *)change context:(void *)context
+{
+    if (context == Person_cars_KVOContext) {
+    	// 处理mutable_cars数组发生变化的回调
+        if ([keyPath isEqualToString:@"mutable_cars"]) {
+        	// 重新计算totalPrice的值
+            [self updateTotalPrice];
+        }
+    }
+}
+
+- (void)updateTotalPrice {
+    
+    // 结合KVC的使用，取出数组中所有的Car对象的price属性值，并求和
+    long long price = [[self valueForKeyPath:@"mutable_cars.@sum.price"] longLongValue];
+    
+    // 调用totalPrice的属性的setter方法
+    [self setTotalPrice:price];
+}
+
+// 重写totalPrice属性的setter方法
+- (void)setTotalPrice:(long long)newTotalPrice {
+    if (_totalPrice != newTotalPrice) {
+    	// 还可以手动发送totalPrice属性值变化的KVO通知
+        [self willChangeValueForKey:@"totalPrice"];
+        _totalPrice = newTotalPrice;
+        [self didChangeValueForKey:@"totalPrice"];
+    }
+}
+
+@end
+```
+
+####测试修改Person对象的Car数组属性，随即获得修改后的Car数组的Car对象的totoalPrice属性值
+
+
+```objc
+static void *Person_fullname_KVOContext = &Person_fullname_KVOContext;
+
+
+@implementation ViewController {
+    Person *_person;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+
+ 	//  创建一个实体类对象
+    _person = [Person new];
+}
+   
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+	
+	// 内次创建一个新的Car对象
+    Car *car = [Car new];
+    car.price = arc4random();
+    
+    // 修改数组one-to-many属性KVO通知
+    [_person addCar:car];
+    
+    // 修改后立刻获取当前Cars数组的总价格
+    NSLog(@"total price = %lld", _person.totalPrice);
+}
+   
+@end 
+```
+
+输出结果
+
+```
+2016-05-18 17:35:31.189 demo[43838:555985] total price = 3389489537
+2016-05-18 17:47:06.720 demo[43838:555985] total price = 6646640165
+2016-05-18 17:47:06.722 demo[43838:555985] total price = 9783392852
+2016-05-18 17:47:09.244 demo[43838:555985] total price = 12732269152
+```
+
+从输出结果来看，totoalPrice是一直累加的，因为Car对象个数一直在累加。
+
+####小结下，KVO数组的几个核心点:
+
+- 最好是对外提供NSArray（不可变copy版本），对内提供NSMutableArray（可变真实数据list）
+- 对外提供 addCar: 、removeCar: 这样的api来操作对内的NSMutableArray
+- 在对内的addCar: 、removeCar: 方法实现中，不要直接使用 -[NSMutableArray addObejct:]，而是使用`[[NSMutableArray对象 mutableArrayValueForKey:@"数组属性名"] addObject:]`来添加对象
+	- 这样才会触发数组属性修改的KVO通知，才会走KVO回调函数
+- 结合KVC直接获取数组内部子元素的属性值
+
+####从上面的例子中我发现一个我之前理解`错误`的问题: KVO是异步执行的
+
+```objc
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+	
+	//1. 内次创建一个新的Car对象
+    Car *car = [Car new];
+    car.price = arc4random();
+    
+    //2. 修改数组one-to-many属性KVO通知
+    [_person addCar:car];
+    
+    //3. 修改后立刻获取当前Cars数组的总价格
+    NSLog(@"total price = %lld", _person.totalPrice);
+}
+```
+
+- 第2步、修改Person对象内部的NSMutableArray对象，会触发KVO通知，以及执行内部的KVO回调函数
+	- 并接着修改Person对象的`totoalPrice`属性值
+
+- 第3步、获取到修改完Person对象内部NSMutableArray对象之后的数组元素的值
+	- 立刻去读取Person对象的`totoalPrice`属性值
+	
+从运行结果看，显示是先执行完第2步，才会执行第3步，所以每次读取到的都是修改完Car数组之后的总totalPrice值，所以个人认为KVO是`同步`完成的。
+
+****
+
+###KVO Compliance（兼容）
+
+https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueObserving/Articles/KVOCompliance.html#//apple_ref/doc/uid/20002178-BAJEAIEE
+
+####iOS提供了两种发送属性修改后的KVO通知:
+
+> 自动发送通知
+
+- 非容器属性:
+	- NSObject类对象属性的setter方法
+		- [object setXxx:]
+	- NSObject类对象使用KVC
+		- [object setValue:forKey:] 
+		- [object setValue:forKeyPath:] 
+	- 如果直接使用`_ivar = 值;`这样会绕过KVO通知、内存管理
+
+- 容器属性:
+	- [[NSMutableArray对象 mutableArrayValueForKey:@"transactions"] addObejct:]等等
+
+> 手动自己发送属性修改后的KVO通知
+
+- 需要在实体类中重写如下方法，告诉iOS系统哪些属性自己发送通知，其他的使用自动发送通知
+	- 自己手动发送通知，return NO;
+	- 自动发送通知，return YES;
+
+```objc
++ (BOOL)automaticallyNotifiesObserversForKey:(NSString *)theKey;
+```
+
+下面是demo示例:
+
+```objc
+#import "Cat.h"
+
+@implementation Cat
+
++ (BOOL)automaticallyNotifiesObserversForKey:(NSString *)key {
+    BOOL automatic = NO;
+    
+    if ([key isEqualToString:@"name"] || [key isEqualToString:@"num"]) {
+    	//name属性和num属性是手动发送通知
+        automatic = NO;
+        
+    } else {
+    	//其他属性都是自动发送通知
+        automatic = [super automaticallyNotifiesObserversForKey:key];
+    }
+    return automatic;
+}
+
+//eg1、每次设置值都手动发送KVO通知
+//- (void)setName:(NSString *)name {
+//    [self willChangeValueForKey:@"name"];
+//    _name = [name copy];
+//    [self didChangeValueForKey:@"name"];
+//}
+
+//eg2、只有设置不同的值才手动发送KVO通知
+//- (void)setName:(NSString *)name {
+//    if (![_name isEqualToString:name]) {
+//        [self willChangeValueForKey:@"name"];
+//        _name = [name copy];
+//        [self didChangeValueForKey:@"name"];
+//    }
+//}
+
+//eg3、当修改name属性值时，同时修改其他属性值，并都发送KVO通知
+- (void)setName:(NSString *)name {
+    
+    if (![_name isEqualToString:name]) {
+        [self willChangeValueForKey:@"name"];//对name属性值修改的KVO通知
+        [self willChangeValueForKey:@"num"];//对num属性值修改的KVO通知
+        _name = [name copy];
+        _num += 1;
+        [self didChangeValueForKey:@"num"];
+        [self didChangeValueForKey:@"name"];
+    }
+}
+
+@end
+```
+
+****
+
+###Key-Value Observing Implementation Details
+
+最后就是稍微看下KVO的具体实现吧...
+
+> Automatic key-value observing is implemented using a technique called isa-swizzling.
+
+The isa pointer, as the name suggests, points to the object's class which maintains a dispatch table. This dispatch table essentially contains pointers to the methods the class implements, among other data.
+
+When an observer is registered for an attribute of an object the isa pointer of the observed object is modified, pointing to an intermediate class rather than at the true class. As a result the value of the isa pointer does not necessarily reflect the actual class of the instance.
+
+You should never rely on the isa pointer to determine class membership. Instead, you should use the class method to determine the class of an object instance.
+
+
+前面已经贴过了就不解释了...
+
+####测试下一个对象添加观察者之后，这个对象的isa指针会指向的还是原来的NSObject类型吗?
+
+```objc
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    //1.
+    Cat *cat = [Cat new];
+    NSLog(@"1 >>> [cat class] = %@ , object_getClass(cat) = %@", [cat class], object_getClass(cat));
+    
+    //2.
+    [cat addObserver:self
+              forKeyPath:@"type"
+                 options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
+                 context:Person_fullname_KVOContext];
+    
+    NSLog(@"2 >>> [cat class] = %@ , object_getClass(cat) = %@", [cat class], object_getClass(cat));
+    
+    //3.
+    cat.type = @"hahaha";
+    NSLog(@"3 >>> [cat class] = %@ , object_getClass(cat) = %@", [cat class], object_getClass(cat));
+    
+    //4.
+    [cat removeObserver:self forKeyPath:@"type"];
+    NSLog(@"4 >>> [cat class] = %@ , object_getClass(cat) = %@", [cat class], object_getClass(cat));
+}
+```
+
+如上有四个断点处，都打印出此时的 `_person对象->isa 指向的类`得到的输出如下
+
+```
+2016-05-18 18:46:57.220 demo[47588:619862] 1 >>> [cat class] = Cat , object_getClass(cat) = Cat
+2016-05-18 18:46:57.221 demo[47588:619862] 2 >>> [cat class] = Cat , object_getClass(cat) = NSKVONotifying_Cat
+2016-05-18 18:46:57.221 demo[47588:619862] 3 >>> [cat class] = Cat , object_getClass(cat) = NSKVONotifying_Cat
+2016-05-18 18:46:57.221 demo[47588:619862] 4 >>> [cat class] = Cat , object_getClass(cat) = Cat
+```
+
+从log可以得到:
+
+- `[cat class]`永远返回cat对象的原始类型Cat
+- `object_getClass(cat)`返回的类型会发生变化，有两种:
+	- cat对象没有被observer时、移除observer时:
+		- Cat
+	- cat对象被observer时:
+		- NSKVONotifying_Cat
+
+那么也就是说:
+
+- 一旦一个对象添加属性观察者之后，该`对象的isa指针`会被替换，并且替换成一个 `NSKVONotifying_原始类名`这样的一个中间类
+
+- 一旦这个对象解删除KVO观察者，该对象的isa指向又会恢复成原始类
+
+> 但是也可以看出几个问题:
+
+- 问题1: `NSKVONotifying_原始类名`这个中间类干了一些什么？
+
+- 问题2: `[被观察对象 class]`一直没有变化，只有`object_getClass(被观察对象)`发生变化
+
+OK，一个个来看.
+
+####一旦一个对象添加KVO属性观察者之后，该对象的isa之前指向的原始类会被替换掉，并且替换成一个 `NSKVONotifying_原始类名`这样的一个中间类
+
+- 当一个对象添加KVO观察者，isa指针就会指向一个新的类`NSKVONotifying_原始类名`
+
+- 那么这个`NSKVONotifying_原始类名`类，很明显不是在`程序编写`阶段生成的（因为工程中压根没看到这个类，也不实际）
+	- 试想编译器根据代码add/remove去动态生成一个`NSKVONotifying_Cat.h`和`NSKVONotifying_Cat.m`出来...太挫了吧
+
+- 所以说`NSKVONotifying_原始类名`这个类，只有可能在`程序运行`阶段通过runtime的api动态创建、注册到系统
+
+- 然后将被观察的对象的isa指向，修改为这个`NSKVONotifying_原始类名`对应的objc_class结构体实例
+
+
+下面是一段在运行时注册一个NSObject类的代码实例:
+
+```objc
+void ReportFunction(id self, SEL _cmd)
+{
+	//给类添加的一个对象方法的c具体实现
+}
+
+@implementation ViewController
+
+- (void)viewDidLoad {
+   [super viewDidLoad];
+  
+  //运行时创建类   
+  [self createClass];
+}
+
+- (void)createClass
+{
+    //1. 创建一个NSObject子类
+    Class MyClass = objc_allocateClassPair([NSObject class],
+                                           "myclass",
+                                           0);
+
+    //2. 添加一个NSString的变量，第四个参数是对其方式，第五个参数是参数类型
+    if (class_addIvar(MyClass, "itest", sizeof(NSString *), 0, "@")) {
+        NSLog(@"add ivar success");
+    }
+
+    //3. 添加一个对象方法及实现
+    class_addMethod(MyClass,
+                    @selector(report),
+                    (IMP)ReportFunction,
+                    "v@:");//void返回类型，@表示target对象，:表示SEL
+
+    //4. 注册这个类到runtime系统中就可以使用他了
+    objc_registerClassPair(MyClass);
+
+    //5. 测试创建的类
+    [self test:MyClass];
+}
+
+- (void)test:(Class)class {
+
+    //1.
+    id obj = [[class alloc] init];
+
+    //2.
+    [obj report];
+}
+
+- (void)report {
+    //空实现即可，这个方法只是为了让[self test:MyClass]不产生警告
+}
+
+@end
+```
+
+####总而言之运行时给被观察的对象创建了一个`中间类`出来，并且这个中间类是Cat（被观察对象isa指向的原始类）的一个`子类`.
+
+证明如下代码示例:
+
+```objc
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    //1.
+    Cat *cat = [Cat new];
+    
+//    NSLog(@"1 >>> [cat class] = %@ , object_getClass(cat) = %@", [cat class], object_getClass(cat));
+    
+    //2.
+    [cat addObserver:self
+              forKeyPath:@"type"
+                 options:NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld
+                 context:Person_fullname_KVOContext];
+ 
+ 	// 取出 `中间类` 的对应的objc_class结构体实例   
+    Class changedClass = object_getClass(cat);
+    NSLog(@"changedClass = %@", changedClass);
+    
+    // 继续取出 `中间类的父类` 对应的objc_class结构体实例   
+    Class changedClass_super = class_getSuperclass(changedClass);
+    NSLog(@"changedClass_super = %@", changedClass_super);
+    
+    // 最后比较Cat对应的objc_class结构体实例  是否等于 中间类的父类对应的objc_class结构体实例
+    //注意: 千万不要使用 object_getClass(cat)获取进行比较，因为此时cat对象的isa已经被替换掉了，并不是原来Cat这个类了.
+    if (changedClass_super == [cat class]) {
+        NSLog(@"是子类的关系");
+    } else {
+        NSLog(@"不是子类的关系");
+    }
+}
+```
+
+输出信息
+
+```
+2016-05-18 19:08:45.318 demo[49007:637186] changedClass = NSKVONotifying_Cat
+2016-05-18 19:08:45.319 demo[49007:637186] changedClass_super = Cat
+2016-05-18 19:08:45.319 demo[49007:637186] 是子类的关系
+```
+
+从输出，确实可以看到运行时生成的这个类确实是之前原始类Cat的一个子类.
+
+> 看到这里，我想大多数知道 `动态代理模式` 的应该清楚KVO下一步要做什么了，就是接着添加原始类中的需要拦截的方法实现（相当于重写），就相当于这个中间类就是作为原始类的一个拦截器。只不过是在`运行时`动态生成一个子类，而不是`程序编写阶段`创建一个子类来完成拦截。
+
+比如，程序编写阶段创建一个子类来完成拦截，现在需要拦截Cat类的setType:方法，附加一些逻辑:
+
+- Cat类
+
+```objc
+#import <Foundation/Foundation.h>
+
+@interface Cat : NSObject
+
+@property (nonatomic, copy) NSString *name;
+
+@property (nonatomic, assign) NSUInteger num;
+
+@property (nonatomic, copy) NSString *type;
+
+@end
+```
+
+```objc
+#import "Cat.h"
+
+@implementation Cat
+@end
+```
+
+- 创建一个Cat子类完成方法的拦截Cat_Interceptor
+
+```objc
+#import "Cat.h"
+
+@interface Cat_Interceptor : Cat
+
+@end
+```
+
+```objc
+#import "Cat_Interceptor.h"
+
+@implementation Cat_Interceptor
+
+- (void)setType:(NSString *)type {
+    //1. 之前做点什么
+    //....
+    
+    //2. 让原始类方法执行
+    [super setType:type];
+    
+    //3. 之后做点什么
+    //....
+}
+
+@end
+```
+
+编写阶段使用子类来完成拦截，这种拦截方式是比较low的。一般高明点的都是在运行时进行拦截，那么在`运行时`进行`拦截`的主要的方式:
+
+```
+一、使用 method-swizzle 调用SEL指向的IMP来完成拦截
+二、运行时在内存中，动态创建的原始类的子类，添加方法实现完成原始类中的方法拦截
+三、借助消息转发机制
+四、使用动态代理NSProxy
+```
+
+无疑，第二种是最复杂的。之前搞过Java，个人觉得第二种就有点类似 `动态代理模式`.
+
+在iOS中也可以实现动态代理模式:
+
+- 继承NSProxy + 消息转发机制
+- 就像上面的第二种，动态生成一个子类，添加重写原始类的所有方法实现
+
+> 反正最后就是这个中间类重写了原始类中被属性观察的的属性的对于的`setter`方法
+
+
+这个中间类对重写setter的代码结构大致如下:
+
+```objc
+- (void)setType:(NSSting *)type {
+
+	//1. 调用父类Cat设置属性值的方法实现
+	[super setType:type];
+	
+	//2. 通知Cat对象的观察者执行回调（从断点效果看是同步执行的）
+	[cat对象的观察者 observeValueForKeyPath:@"type"  ofObject:self  change:@{}  context:nil];
+}
+```
+
+只是一个简单的思路体现，我想并没有这么简单，就找到原始Cat对象的观察者对象我也不太清楚，也懒得看了。那么到此为止，这个中间类所要完成的事情，大概都清楚了...
+
+####最后一个问题: `[被观察对象 class]`一直没有变化，只有`object_getClass(被观察对象)`发生变化
+
+看下两种获取Class的代码是否有不同
+
+- `object_getClass()` 的苹果源码实现
+
+```objc
+Class object_getClass(id obj)
+{
+    if (obj) return obj->getIsa();//直接返回对象的isa指向的objc_class结构体实例
+    else return Nil;
+}
+```
+
+- `-[NSObject class]` 的苹果源码实现
+
+```objc
+- (Class)class {
+    return object_getClass(self);
+}
+```
+
+从实现上看， `-[NSObject class]` 就是调用的`object_getClass()`函数完成获取对应的objc_class结构体实例。
+
+那为什么 `-[NSObject class]` 与 `object_getClass()` 返回的objc_class结构体实例 是不同的了？
+
+唯一的解释就是，在生成中间类的同时，也使用`class_replaceMethod()`替换掉了原始 `-[Cat class]`的实现，返回的是`objc_getClass("Cat")`，而不是`object_getClass(self)`.
+
+因为`object_getClass(object)`会读取传入object对象的isa指针所指向的类，如果`-[Cat class]`实现没有被修改，那么`-[Cat class]`必定返回的也是中间类.
+
+****
+
+###最后对KVO的大致实现做个最终总结:
+
+- 第一步、当一个对象的属性添加了属性观察者之后，这个`对象的 isa指针`会被修改
+	- 注意: 是这个`对象`的isa指针，而不是这个对象`所属类`的isa指针
+
+- 第二步、由runtime在运行时创建出一个对象所属类的一个子类，名字的格式是`NSKVONotifying_原始类名`
+
+- 第三步、重写原来父类中被观察属性property的setter方法实现
+	- class_addMethod()
+	- class_replaceMethod()
+
+```objc
+// 大致格式如下
+- (void)setType:(NSSting *)type {
+
+	//1. 调用父类Cat设置属性值的方法实现
+	[super setType:type];
+	
+	//2. 通知Cat对象的观察者执行回调（从断点效果看是同步执行的）
+	[cat对象的观察者 observeValueForKeyPath:@"type"  ofObject:self  change:@{}  context:nil];
+}
+```
+
+- 第四步、对象的 isa指针，由runtime系统替换指向为第二步中创建的中间类`NSKVONotifying_原始类名`
+
+- 第五步、当对象的被观察属性值发生改变时（中间类的setter方法实现被调用），就会回调执行观察者的`observeValueForKeyPath: ofObject:change:context:`方法实现
+	- 从断点调用来看，这个回调过程是`同步`执行的
+
+- 第六步，如下两个方法的返回的objc_class结构体实例是`不同`的
+	- `object_getClass(被观察者对象)` >>> 返回的是替换后的`中间类`
+	- `[被观察对象 class]` >>> 仍然然会之前的`原始类`
+
+- 第七步、当对象移除属性观察者之后，该`对象的isa指针`又会`恢复`指向为`原始类`
+
+***
+
+###在记录个lldb调试时打印一个被观察的对象的观察者信息
+
+```
+po [observedObject observationInfo]
+```
+
+有时间再看看基于KVO建立的MVVM响应式编程结构...
+
+***
+
+###学习资源
+
+```
+http://www.cocoachina.com/ios/20150313/11321.html
+http://nshipster.com/key-value-observing/
+http://www.cocoachina.com/industry/20140624/8936.html
+https://developer.apple.com/library/mac/documentation/Cocoa/Reference/Foundation/Protocols/NSKeyValueObserving_Protocol/
+```

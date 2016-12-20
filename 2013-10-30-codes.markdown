@@ -1,0 +1,1448 @@
+---
+layout: post
+title: "Codes"
+date: 2013-10-30 00:14:28 +0800
+comments: true
+categories: 
+---
+
+记录下一些小技巧
+
+
+***
+
+git ssh key
+
+1.如何生成ssh公钥
+你可以按如下命令来生成sshkey
+
+```
+ssh-keygen -t rsa -C "xxxxx@xxxxx.com"
+```
+
+2.查看你的public key
+
+```
+cat ~/.ssh/id_rsa.pub
+```
+
+3.添加后，在终端（Terminal）中输入
+
+```
+ssh -T git@git.oschina.net
+```
+
+若返回
+Welcome to Git@OSC, yourname!
+
+***
+
+###NSAssert的使用
+
+```
+NSAssert(条件不成立 , 崩溃程序时控制台输出的信息);
+```
+
+###宏条件编译
+
+```
+#define win 1
+#define mac 2
+#define other 3
+
+//将Platform设置到preprocessing中的宏
+void sayHello() {
+#if (Platform == win)
+    //....
+#elif (Platform == mac)
+    //....
+#else 
+    //....
+#endif
+}
+```
+
+其他用法
+
+
+```
+宏函数
+#define sayHaha(haha) { \
+            printf("%s", haha); \
+        } \
+```
+
+```
+void sayHelloWorld() {
+    printf("hello\n");
+}
+
+void sayMyName() {
+    printf("myname\n");
+}
+
+//宏代替两个函数
+#define say(Name) say##Name()
+```
+
+```
+int main(int argc, const char * argv[]) {
+	
+	//1. 
+	say(HelloWorld);
+	
+	//2.
+    say(MyName);
+    
+    //3.
+    sayHaha("hahaha");
+    
+    return 1;
+}
+```
+
+***
+
+###c结构体数组内存分配与使用
+
+```c
+typedef struct Person {
+    int age;
+    char sex;
+}Person;
+
+- (void)testPool {
+    
+    
+    Person *p = malloc(sizeof(Person));
+    p->age = 19;
+    p->sex = 'M';
+    
+    // 分配能够存放5个Person实例的内存，但是里面是没有任何Person实例的
+    Person **arr = malloc(5 * sizeof(Person));
+//    Person *p1 = arr[0];
+//    Person *p2 = arr[1];
+//    Person *p3 = arr[2];
+//    Person *p4 = arr[3];
+//    Person *p5 = arr[4];
+    
+    // 需要继续指定内部存放的Person实例
+    arr[0] = p;
+    arr[1] = p;
+    arr[2] = p;
+    arr[3] = p;
+    arr[4] = p;
+}
+```
+
+***
+
+###封装一个保存用户登录态的工具类Session
+
+```objc
+@interface XZHHttpSession : NSObject
+
+- (void)saveLoginWithAccount:(NSString *)acount;
+- (void)saveLogoutWithAccount:(NSString *)acount;
+- (BOOL)isLoginWithAccount:(NSString *)acount;
+
+- (void)saveCookie:(NSString *)cookies;
+- (NSString *)loadCookie:(NSString *)cookies;
+
+//....等等
+
+@end
+```
+
+....省略实现，可以使用sqlite、文件来存放缓存数据。
+
+***
+
+###可变字典，使用一个`数组`作为key
+
+```objc
+NSDictionary *dict = @{
+                       @"name":@[@"1", @"2", @"3"],
+                       @"address":@"user.addr",
+                       };
+
+NSMutableDictionary *mapper = [NSMutableDictionary new];
+
+[dict enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
+//        NSLog(@"key = %@, value = %@", key, obj);
+    
+    mapper[obj] = @"111";
+}];
+
+NSLog(@"mapper = %@\n", mapper);
+```
+
+输出结果:
+
+```
+mapper = {
+				//数组 : 字符串
+				(
+					1,
+					2,
+					3
+				) = 111;
+		
+				//字符串 : 字符串
+			    "user.addr" = 111;
+			}
+```
+
+
+****
+
+
+###TableView 单选、多选
+
+- Cell.h
+
+```
+@interface LTableViewCell : UITableViewCell{
+
+	// 标记Cell是否被选中
+    BOOL			m_checked;
+    
+    // 选中的图片
+    UIImageView*	m_checkImageView;
+}
+
+//修改选中状态
+- (void)setChecked:(BOOL)checked;
+
+@end
+```
+
+- Cell.m
+
+```
+@implementation LTableViewCell
+
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+    
+        // Initialization code
+        [self creat];
+    }
+    return self;
+}
+
+//初始化选中图片View
+- (void)creat {
+
+    if (m_checkImageView == nil)
+    {	
+    
+    	//默认使用未选中的图片
+        m_checkImageView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"Unselected.png"]];
+        m_checkImageView.frame = CGRectMake(10, 10, 29, 29);
+        [self addSubview:m_checkImageView];
+    }
+}
+
+
+
+- (void)setChecked:(BOOL)checked {
+	
+    if (checked)
+	{
+		//选中后修改为的图片
+		m_checkImageView.image = [UIImage imageNamed:@"Selected.png"];
+		self.backgroundView.backgroundColor = [UIColor colorWithRed:223.0/255.0 green:230.0/255.0 blue:250.0/255.0 alpha:1.0];
+	}
+	else
+	{
+	
+		//取消选中后修改为的图片
+		m_checkImageView.image = [UIImage imageNamed:@"Unselected.png"];
+		self.backgroundView.backgroundColor = [UIColor whiteColor];
+	}
+	
+	//保存当前选中状态
+	m_checked = checked;
+}
+
+- (void)setSelected:(BOOL)selected animated:(BOOL)animated
+{
+    [super setSelected:selected animated:animated];
+
+    // Configure the view for the selected state
+    //.....
+}
+
+@end
+```
+
+- TableViewController.m
+
+```
+@interface ViewController () <UITableViewDataSource,UITableViewDelegate>
+{
+	//1. 
+    UITableView *table;
+    
+    //2. 记录所有Cell对应的NSIndexPath对应的选中状态
+    NSMutableArray *contacts;
+    
+    //3. 全选按钮
+    UIButton *button;
+}
+@end
+```
+
+```
+@implementation ViewController
+
+//根据数据源数组长度，创建字典数组
+- (void)createContactDictWithDataSourceLength:(NSInteger)length 
+{
+	for (int i = 0; i <length; i++) {
+	
+		//1.
+        NSMutableDictionary *dic = [NSMutableDictionary dictionary];
+        
+        //2. 默认未选中状态
+        [dic setValue:@"NO" forKey:@"checked"];
+        
+        //3. 
+        [contacts addObject:dic];
+    }
+}
+
+- (void)addAllSelectButton {
+	
+	//1. 
+	button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+	
+	//2. 
+    [button setTitle:@"全选" forState:UIControlStateNormal];
+    
+    //3.
+    button.frame = CGRectMake(10, 10, 100, 50);
+    
+    //4.
+    [button addTarget:self action:@selector(allSelect:) forControlEvents:UIControlEventTouchUpInside];
+    
+    //5.
+    [self.view addSubview:button];
+}
+
+//点击全选后的处理方法
+- (void)allSelect:(UIButton*)sender {
+
+	//1. 获取所有的可见Cell的NSIndexPath
+    NSArray *anArrayOfIndexPath = [NSArray arrayWithArray:[table indexPathsForVisibleRows]];
+    
+    for (int i = 0; i < [anArrayOfIndexPath count]; i++) {
+    	//1.1 
+        NSIndexPath *indexPath= [anArrayOfIndexPath objectAtIndex:i];
+        
+        //1.2
+        LTableViewCell *cell = (LTableViewCell*)[table cellForRowAtIndexPath:indexPath];
+        
+        //1.3
+        NSUInteger row = [indexPath row];
+	
+		//1.4 获取对应NSIndexPath的记录选中状态字典
+        NSMutableDictionary *dic = [contacts objectAtIndex:row];
+        
+        //1.5 改变全选按钮显示的文字，并修改选中状态
+        if ([[[(UIButton*)sender titleLabel] text] isEqualToString:@"全选"]) 
+        {	
+        	 //设置为选中
+            [dic setObject:@"YES" forKey:@"checked"];
+            
+            //通知Cell更改选中图片
+            [cell setChecked:YES];
+            
+        }else {
+        
+        	//设置为未选中
+            [dic setObject:@"NO" forKey:@"checked"];
+            
+            //通知Cell更改选中图片
+            [cell setChecked:NO];
+        }
+    }
+    
+    //2 设置不可见部分的Cell的选中状态、按钮的标题文字
+	if ([[[(UIButton*)sender titleLabel] text] isEqualToString:@"全选"])
+    {
+        for (NSDictionary *dic in contacts) {
+            [dic setValue:@"YES" forKey:@"checked"];
+        }
+        
+         [(UIButton*)sender setTitle:@"取消" forState:UIControlStateNormal];
+         
+    } else {
+    
+        for (NSDictionary *dic in contacts) {
+            [dic setValue:@"NO" forKey:@"checked"];
+        }
+        
+        [(UIButton*)sender setTitle:@"全选" forState:UIControlStateNormal];
+    }
+}
+
+
+@end
+```
+
+***
+
+###UITableView在没有数据List、没有网络、给出一个默认图片作为背景
+
+```objc
+1. 如果 = 0，显示没有数据的背景图
+2. 如果 != 0，移除添加的背景图
+3. 如果进入的时候没网，显示断网的背景图
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    NSInteger sectionCount = [self sectionCount];
+    if (sectionCount < 1) {
+        //添加没有数据背景View
+    } else {
+		//移除没有数据背景View
+    }
+    return sectionCount;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    NSInteger rows = [self rowCountForSection:section];
+    if (rows < 1) {
+		//添加没有数据背景View
+    } else {
+		//移除没有数据背景View
+    }
+
+    return rows;
+}
+```
+
+***
+
+###UITextfiled 的 leftView与rightViedw
+
+```
+UITextField *txt = [[UITextField alloc] init];
+```
+
+```
+//1. 背景
+txt.background = [[UIImage imageNamed:@"背景图片"] resizableImageWithCapInsets:UIEdgeInsetsMake(1, 1, 1, 1)];
+```
+   
+``` 
+//2. 左侧
+txt.leftViewMode = UITextFieldViewModeAlways;
+UIImageView *leftView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"左侧View的图片"]];
+
+//让leftView图片左边有一定距离
+CGRect frame = leftView.frame;
+frame.size.width += 15;
+leftView.contentMode = UIViewContentModeCenter;
+
+txt.leftView = leftView;
+
+```
+   
+``` 
+//3. 右侧
+txt.rightView = [[UIView alloc] init];
+```
+
+
+***
+
+###键盘事件
+
+```
+NSNotification.userInfo:
+
+userInfo = {
+
+	// 键盘动画的执行节奏(快慢)
+    UIKeyboardAnimationCurveUserInfoKey = 7;
+    
+    // 键盘出现/移除时动画执行的时间
+    UIKeyboardAnimationDurationUserInfoKey = "0.25";
+    
+    //
+    UIKeyboardBoundsUserInfoKey = "NSRect: {`{0, 0}, {320, 253}`}";
+    
+    //
+    UIKeyboardCenterBeginUserInfoKey = "NSPoint: {160, 694.5}";
+    
+    //
+    UIKeyboardCenterEndUserInfoKey = "NSPoint: {160, 441.5}";
+    
+    // 键盘刚开始的frame
+    UIKeyboardFrameBeginUserInfoKey = "NSRect: {`{0, 568}, {320, 253}`}";
+    
+    // 键盘最终的frame(动画执行完毕后)
+    UIKeyboardFrameEndUserInfoKey = "NSRect: {`{0, 315}, {320, 253}`}";
+    
+    //
+    UIKeyboardIsLocalUserInfoKey = 1;
+}}
+
+```
+
+###随机产生颜色
+
+```
++ (UIColor *)randomColor {
+    CGFloat hue = ( arc4random() % 256 / 256.0 );  //  0.0 to 1.0
+    CGFloat saturation = ( arc4random() % 128 / 256.0 ) + 0.5;  //  0.5 to 1.0, away from white
+    CGFloat brightness = ( arc4random() % 128 / 256.0 ) + 0.5;  //  0.5 to 1.0, away from black
+    return [UIColor colorWithHue:hue saturation:saturation brightness:brightness alpha:1];
+}
+```
+
+###CocoaPods spec 文件模板
+
+```
+Pod::Spec.new do |s|
+  s.name         = 'YYDispatchQueuePool'
+  s.summary      = 'iOS utility class to manage global dispatch queue.'
+  s.version      = '0.9.0'
+  s.license      = { :type => 'MIT', :file => 'LICENSE' }
+  s.authors      = { 'ibireme' => 'ibireme@gmail.com' }
+  s.social_media_url = 'http://blog.ibireme.com'
+  s.homepage     = 'https://github.com/ibireme/YYDispatchQueuePool'
+  s.platform     = :ios, '6.0'
+  s.ios.deployment_target = '6.0'
+  s.source       = { :git => 'https://github.com/ibireme/YYDispatchQueuePool.git', :tag => s.version.to_s }
+  
+  s.requires_arc = true
+  s.source_files = 'YYDispatchQueuePool/*.{h,m}'
+  s.public_header_files = 'YYDispatchQueuePool/*.{h}'
+  
+  s.frameworks = 'UIKit'
+
+end
+```
+
+***
+
+###Foundation NSArray数组按照某个key排序
+
+```
++ (NSMutableArray *)sortArrayByKey:(NSString *)key array:(NSMutableArray *)array ascending:(BOOL)ascending
+{
+    NSMutableArray *tempArray = [[NSMutableArray alloc] init];
+    [tempArray removeAllObjects];
+    [tempArray addObjectsFromArray:array];
+    
+    NSSortDescriptor *descriptor = [[NSSortDescriptor alloc] initWithKey:key ascending:ascending];
+    NSArray *sortedArray = [tempArray sortedArrayUsingDescriptors:@[descriptor]];
+    
+    [tempArray removeAllObjects];
+    tempArray = (NSMutableArray *)sortedArray;
+    
+    [array removeAllObjects];
+    [array addObjectsFromArray:tempArray];
+    
+    return array;
+}
+```
+
+***
+
+###NSArray filter 数组过滤
+
+```
+//1. 
+NSArray *arrays = ...;
+
+//2. 
+[arrays filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id evaluatedObject, NSDictionary *bindings) {
+    
+    if (evaluatedObject 符合条件) {
+        return YES;//会，被添加到返回的数组中
+    } else {
+        return NO;//不会，被添加到返回的数组中
+    }
+}]];
+```
+
+***
+
+###NSFileManage 深度遍历与普通遍历
+
+- 假设A文件夹，下有三个字文件夹: 文件夹B, 文件夹C, 文件夹D。
+
+- A文件夹下有一个文件e.txt
+
+- B文件夹下有一个f.txt
+
+```
+NSString *path = A文件夹下的所有子文件（文件夹 or 文件）;
+```
+
+```
+深度遍历
+
+NSArray *relativeSubpaths = [[NSFileManager defaultManager] subpathsOfDirectoryAtPath:absolutePath error:nil];
+
+输出结果:
+1. /省略/A/.DS_Store
+2. /省略/A/B
+3. /省略/A/B/f.txt
+4. /省略/A/C
+5. /省略/A/D
+6. /省略/A/e.txt
+```
+
+```
+非深度遍历
+
+NSArray *relativeSubpaths = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:absolutePath error:nil];
+
+输出结果:
+1. /省略/A/.DS_Store
+2. /省略/A/B
+3. /省略/A/C
+4. /省略/A/D
+5. /省略/A/e.txt
+```
+
+对比如上不同遍历下的输出，`深度遍历`多了一条`/省略/A/B/f.txt`，说明:
+
+- 深度遍历: 会将`子目录下`的所有的文件夹或文件，都作为一个新的元素加到数组中.
+
+- 非深度遍历: 只会遍历`当前目录下`的所有文件夹或文件加到数组中.
+
+
+***
+
+###UIApplication 获取当前App程序的状态（前台、后台）
+
+```
+UIApplicationState枚举定义了App的状态
+```
+
+```
+if (application.applicationState == UIApplicationStateActive) {
+
+    // 程序当前正处于前台
+    //...
+    
+} else if(application.applicationState == UIApplicationStateBackground)
+{
+    // 程序处于后台   
+    //... 
+} else if (application.applicationState == UIApplicationStateInactive) {
+	// 程序未激活，比如: 进入消息通知栏时点击某条消息
+	//...
+}
+```
+
+
+***
+
+###ProcessInfo实例得到系统的数据
+
+```
+arguments:返回运行该程序所传入的参数组成的 NSArray 对象;
+environment：返回系统内所有环境变量名和值组成的 NSDictionary 对象。
+hostName：返回该进程所在系统的主机名;
+processName：返回进程名;
+processIdentifier：返回进程的标识符;
+globallyUniqueString：返回一个全局的,唯一的字符串;
+operatingSystem：返回操作系统;
+operatingSystemName:返回操作系统名;
+operatingSystemVersionString:返回系统版本号的字符串;
+operatingSystemVersion：返回系统版本
+processorCount：返回处理器数量;
+activeProcessorCount：返回激活状态的处理器数量;
+physicalMemory：返回系统的物理内存;
+systemUptime：系统已运行的时间
+```
+
+***
+
+###设备类型判断宏
+
+```
+TARGET_OS_MAC
+TARGET_OS_IPHONE
+TARGET_IPHONE_SIMULATOR
+TARGET_OS_IOS
+TARGET_OS_WATCH
+TARGET_OS_TV
+TARGET_OS_SIMULATOR
+```
+
+***
+
+###一些类型的真正的Class
+
+
+```
+@"__NSCFNumber" : @"NSNumber",
+@"__NSCFString" : @"NSString",
+@"__NSCFBoolean" : @"BOOL",
+@"__NSArrayI" : @"NSArray",
+@"__NSArrayM" : @"NSMutableArray",
+@"__NSDictionaryI" : @"NSDictionary",
+@"__NSDictionaryM" : @"NSMutableDictionary",
+```
+
+***
+
+###归档
+
+- 支持归档的对象的Class必须实现 `NSCoding` 协议
+- 可以使用runtime自动实现属性的归档协议代码
+
+####将一个自定义对象 序列化（归档）到磁盘文件
+
+```
+//1. 准备要序列化的自定义内存对象
+id objToBeWritten = self.inMemoryCache[key];
+
+//2. 使用NSKeyedArchiver的函数，将自定义对象转换成要存入磁盘文件的NSData类型数据
+NSData *dataToBeWritten = [NSKeyedArchiver archivedDataWithRootObject:objToBeWritten];
+
+//3. 最后将转换得到的NSData数据写入磁盘文件
+[dataToBeWritten writeToFile:filePath atomically:YES];
+```
+
+####从一个磁盘文件 反序列化（解档）成内存对象
+
+
+```
+id object = [NSKeyedUnarchiver unarchiveObjectWithData:[NSData dataWithContentsOfFile:filePath]];
+```
+
+***
+
+###Macdown 表格语法
+
+```
+| Tables        | Are           | Cool  |
+| ------------- |:-------------:| -----:|
+| col 3 is      | right-aligned | $1600 |
+| col 2 is      | centered      |   $12 |
+| zebra stripes | are neat      |    $1 |
+```
+
+```
+| Tables        | Are           | 
+| :-------------: |:-------------:| 
+| col 3 is      | right-aligned | 
+| col 2 is      | centered      | 
+| zebra stripes | are neat      | 
+```
+
+***
+
+###所有的网络请求错误code，在`NSURLError.h`可以找到如下code定义
+
+```
+NS_ENUM(NSInteger)
+{
+    NSURLErrorUnknown = 			-1,
+    NSURLErrorCancelled = 			-999,
+    NSURLErrorBadURL = 				-1000,
+    NSURLErrorTimedOut = 			-1001,
+    NSURLErrorUnsupportedURL = 			-1002,
+    NSURLErrorCannotFindHost = 			-1003,
+    NSURLErrorCannotConnectToHost = 		-1004,
+    NSURLErrorNetworkConnectionLost = 		-1005,
+    NSURLErrorDNSLookupFailed = 		-1006,
+    NSURLErrorHTTPTooManyRedirects = 		-1007,
+    NSURLErrorResourceUnavailable = 		-1008,
+    NSURLErrorNotConnectedToInternet = 		-1009,
+    NSURLErrorRedirectToNonExistentLocation = 	-1010,
+    NSURLErrorBadServerResponse = 		-1011,
+    NSURLErrorUserCancelledAuthentication = 	-1012,
+    NSURLErrorUserAuthenticationRequired = 	-1013,
+    NSURLErrorZeroByteResource = 		-1014,
+    NSURLErrorCannotDecodeRawData =             -1015,
+    NSURLErrorCannotDecodeContentData =         -1016,
+    NSURLErrorCannotParseResponse =             -1017,
+    NSURLErrorAppTransportSecurityRequiresSecureConnection NS_ENUM_AVAILABLE(10_11, 9_0) = -1022,
+    NSURLErrorFileDoesNotExist = 		-1100,
+    NSURLErrorFileIsDirectory = 		-1101,
+    NSURLErrorNoPermissionsToReadFile = 	-1102,
+    NSURLErrorDataLengthExceedsMaximum NS_ENUM_AVAILABLE(10_5, 2_0) =	-1103,
+    
+    // SSL errors
+    NSURLErrorSecureConnectionFailed = 		-1200,
+    NSURLErrorServerCertificateHasBadDate = 	-1201,
+    NSURLErrorServerCertificateUntrusted = 	-1202,
+    NSURLErrorServerCertificateHasUnknownRoot = -1203,
+    NSURLErrorServerCertificateNotYetValid = 	-1204,
+    NSURLErrorClientCertificateRejected = 	-1205,
+    NSURLErrorClientCertificateRequired =	-1206,
+    NSURLErrorCannotLoadFromNetwork = 		-2000,
+    
+    // Download and file I/O errors
+    NSURLErrorCannotCreateFile = 		-3000,
+    NSURLErrorCannotOpenFile = 			-3001,
+    NSURLErrorCannotCloseFile = 		-3002,
+    NSURLErrorCannotWriteToFile = 		-3003,
+    NSURLErrorCannotRemoveFile = 		-3004,
+    NSURLErrorCannotMoveFile = 			-3005,
+    NSURLErrorDownloadDecodingFailedMidStream = -3006,
+    NSURLErrorDownloadDecodingFailedToComplete =-3007,
+
+    NSURLErrorInternationalRoamingOff NS_ENUM_AVAILABLE(10_7, 3_0) =         -1018,
+    NSURLErrorCallIsActive NS_ENUM_AVAILABLE(10_7, 3_0) =                    -1019,
+    NSURLErrorDataNotAllowed NS_ENUM_AVAILABLE(10_7, 3_0) =                  -1020,
+    NSURLErrorRequestBodyStreamExhausted NS_ENUM_AVAILABLE(10_7, 3_0) =      -1021,
+    
+    NSURLErrorBackgroundSessionRequiresSharedContainer NS_ENUM_AVAILABLE(10_10, 8_0) = -995,
+    NSURLErrorBackgroundSessionInUseByAnotherProcess NS_ENUM_AVAILABLE(10_10, 8_0) = -996,
+    NSURLErrorBackgroundSessionWasDisconnected NS_ENUM_AVAILABLE(10_10, 8_0)= -997,
+};
+```
+
+###`__has_include(文件名)宏`
+
+```
+#if __has_include(<sqlite3.h>)
+//从库中查找 .h
+#import <sqlite3.h>
+#else
+//从编译路径中查找 .h
+#import "sqlite3.h"
+#endif
+```
+
+
+```objc
+//是否有 __has_include 这个宏
+#ifdef __has_include 
+
+#if __has_include(<YYModel/YYModel.h>)
+	//如果存在YYModel库，从库查找.h
+	FOUNDATION_EXPORT double YYModelVersionNumber;
+	FOUNDATION_EXPORT const unsigned char YYModelVersionString[];
+	#import <YYModel/NSObject+YYModel.h>
+	#import <YYModel/YYClassInfo.h>
+#else
+	//不存在YYModel库，从项目编译路径查找.h
+	#import "NSObject+YYModel.h"
+	#import "YYClassInfo.h"
+#endif
+
+#endif
+```
+
+###自定义一个UIView时，不要将自己设置为这个View的代理实现对象
+
+```
+@interface SenWeiboView : UITextView
+
+@end
+```
+
+```
+@interface SenWeiboView () <UITextViewDelegate>
+
+@end
+
+@implementation SenWeiboView
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        
+        //不要这么做
+        self.delegate = self;
+    }
+    return self;
+}
+
+#pragma mark - UITextViewDelegate
+
+- (void)textViewDidBeginEditing:(UITextView *)textView {
+
+}
+
+- (void)textViewDidEndEditing:(UITextView *)textView {
+    
+}
+
+#pragma mark - 绘图
+
+- (void)drawRect:(CGRect)rect
+{
+
+}
+
+@end
+```
+
+因为一旦外部别人也设置这个View实例的代理，那么当前这个View实例的代理方法就不会走了.
+
+####UIView控件内部应该使用`注册通知`来代替使用`设置自己为代理`
+
+***
+
+###方法中声明一个Block变量（NSBlock类型的对象）
+
+```objc
+- (void)func {
+	//1.
+	void (^block)(void) = ^(){
+		NSLog(@"this a NSBlock Instance ...");
+	};
+	//2.
+	block();
+}
+```
+
+###id指针 与 void*指针 的区别
+
+- 首先都是任意类型的指针
+- 区别只是
+	- id指针，能够通过`objective-c语法`编译
+	- void*指针，只能通过`c语法`编译
+
+
+
+###响应码大致分类
+
+```
+1×× 　　保留   
+2×× 　　表示请求成功地接收   
+3×× 　　为完成请求客户需进一步细化请求   
+4×× 　　客户错误   
+5×× 　　服务器错误  
+```
+
+***
+
+###解决手动的为每个属性或每个方法都去指定nonnull和nullable修饰符
+
+- 苹果为了减轻我们的工作量，专门提供了两个宏：	
+	- NS_ASSUME_NONNULL_BEGIN 开始
+	- NS_ASSUME_NONNULL_END 结束
+
+- 在这两个宏之间的代码，所有简单指针对象都被假定为nonnull，因此我们只需要去指定那些nullable的指针
+
+- 示例代码
+
+```objc
+NS_ASSUME_NONNULL_BEGIN
+
+@interface TestNullabilityClass () 
+ 
+//默认由编译器加上 nonnull
+@property (nonatomic, copy) NSArray * items; 
+ 
+//自定义某一些可以nullable的属性
+- (id)itemWithName:(nullable NSString *)name; 
+ 
+@end 
+
+NS_ASSUME_NONNULL_END
+```
+
+***
+
+###禁止使用init和new方法
+
+```objc
+- (instancetype)init UNAVAILABLE_ATTRIBUTE;
++ (instancetype)new UNAVAILABLE_ATTRIBUTE;
+```
+
+***
+
+```objc
+NSMutableDictionary *dic = ({
+        
+    NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+    
+    [dictionary setObject:@"hahah" forKey:@"key"];
+    
+    dictionary;
+});
+```
+
+###使用KVC修改UITextFiled的placeholder的颜色
+
+```objc
+UITextField *filed = [UITextField new];
+UILabel *label = [filed valueForKeyPath:@"_placeholderLabel"];
+label.textColor = [UIColor whiteColor];
+```
+
+或
+
+```objc
+UITextField *filed = [UITextField new];
+[filed setValue:[UIColor whiteColor] forKey:@"_placeholderLabel.textColor"];
+```
+
+###UIView被添加、移除、出现时的回调函数
+
+```
+//当加入视图完成后调用  
+(void)didAddSubview:(UIView *)subview  
+//当视图移动完成后调用  
+(void)didMoveToSuperview  
+//当视图移动到新的WINDOW后调用  
+(void)didMoveToWindow  
+//在删除视图之后调用  
+(void)willRemoveSubview:(UIView *)subview  
+//当移动视图之前调用  
+(void)didMoveToSuperview:(UIView *)subview  
+//当视图移动到WINDOW之前调用  
+(void)didMoveToWindow  
+```
+
+###让子类必须实现某个方法，如果没有实现直接让程序崩溃
+
+```objc
+NSAssert(NO, "子类必须要实现APIManager这个protocol。");
+```
+
+***
+
+###将一些不太重要的任务放在 idle（空闲） 时运行
+
+```objc
+- (void)idleNotificationMethod { 
+    // do something here 
+} 
+ 
+- (void)registerForIdleNotification  
+{ 
+    [[NSNotificationCenter defaultCenter] addObserver:self 
+        selector:@selector(idleNotificationMethod) 
+        name:@"IdleNotification" 
+        object:nil]; 
+    NSNotification *notification = [NSNotification 
+        notificationWithName:@"IdleNotification" object:nil]; 
+    [[NSNotificationQueue defaultQueue] enqueueNotification:notification 
+    postingStyle:NSPostWhenIdle]; 
+}  
+```
+
+***
+
+```objc
+int main(int argc, char* argv[])
+{
+    @autoreleasepool
+    {
+        int returnValue;
+        @try
+        {
+            returnValue = UIApplicationMain(argc, argv, nil, 
+                NSStringFromClass([MyAppDelegate class]));
+        }
+        @catch (NSException* exception)
+        {
+            LogError(@"Uncaught exception: %@, %@", [exception description], 
+                [exception callStackSymbols]);
+            @throw exception;
+        }
+        return returnValue;
+    }
+}
+```
+
+###修改uipagecontrol点的图片的另一种方式（KVC之外）
+
+重写UIPageControl的setCurrentPage:方法实现
+
+```objc
+-(void)setCurrentPage:(NSInteger)page
+{
+	for (int i = 0; i < [self.subviews count]; i++)
+	{
+	    UIView* dotView = [self.subviews objectAtIndex:i];
+	    UIImageView* dot = nil;
+	
+	    for (UIView* subview in dotView.subviews)
+	    {
+	        if ([subview isKindOfClass:[UIImageView class]])
+	        {
+	            dot = (UIImageView*)subview;
+	            break;
+	        }
+	    }
+	
+	    if (dot == nil)
+	    {
+	        dot = [[UIImageView alloc] initWithFrame:CGRectMake(0.0f, 0.0f, dotView.frame.size.width, dotView.frame.size.height)];
+	        [dotView addSubview:dot];
+	    }
+	
+	    if (i == self.currentPage)
+	    {
+	        if(self.activeImage)
+	            dot.image = activeImage;
+	    }
+	    else
+	    {
+	         if (self.inactiveImage)
+	             dot.image = inactiveImage;
+	    }
+	}
+}
+```
+
+###UIColor转UIImage并且圆角化处理
+
+- 使用CALayer圆角处理
+
+```objc
+- (UIImage *)makeRoundedImageWithColor:(int)rgbValue size:(CGSize)size radius:(float)radius {
+    CGRect rect = CGRectMake(0, 0, size.width, size.height);
+    
+    UIColor *color = UIColorWithRGB(rgbValue);
+    if (!color || color == [UIColor clearColor]) {
+        return nil;
+    }
+    
+    //Image Context，Color >>> Image
+    UIGraphicsBeginImageContext(rect.size);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+    CGContextSetFillColorWithColor(context, [UIColorWithRGB(rgbValue) CGColor]);
+    CGContextFillRect(context, rect);
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    //CALayer 圆角处理Image
+    CALayer *imageLayer = [CALayer layer];
+    imageLayer.frame = CGRectMake(0, 0, image.size.width,image.size.height);
+    imageLayer.contents = (id)image.CGImage;
+    imageLayer.masksToBounds = YES;
+    imageLayer.cornerRadius = radius;
+    
+    //获取圆角后的Image
+    UIGraphicsBeginImageContext(image.size);
+    [imageLayer renderInContext:UIGraphicsGetCurrentContext()];
+    UIImage *roundedImage = UIGraphicsGetImageFromCurrentImageContext();
+    //    CGContextSetFillColorWithColor(context, [UIColorWithRGB(rgbValue)1 CGColor]);
+    UIGraphicsEndImageContext();
+    
+    return roundedImage;
+}
+```
+
+- 使用UIBezierPath圆角
+
+```objc
+- (UIImage *)makeCircularImageWithSize:(CGSize)size
+{
+  // make a CGRect with the image's size
+  CGRect circleRect = (CGRect) {CGPointZero, size};
+  
+  // begin the image context since we're not in a drawRect:
+  UIGraphicsBeginImageContextWithOptions(circleRect.size, NO, 0);
+  
+  // create a UIBezierPath circle
+  UIBezierPath *circle = [UIBezierPath bezierPathWithRoundedRect:circleRect cornerRadius:circleRect.size.width/2];
+  
+  // clip to the circle
+  [circle addClip];
+  
+  // draw the image in the circleRect *AFTER* the context is clipped
+  [self drawInRect:circleRect];
+  
+  // create a border (for white background pictures)
+#if StrokeRoundedImages
+  circle.lineWidth = 1;
+  [[UIColor darkGrayColor] set];
+  [circle stroke];
+#endif
+  
+  // get an image from the image context
+  UIImage *roundedImage = UIGraphicsGetImageFromCurrentImageContext();
+  
+  // end the image context since we're not in a drawRect:
+  UIGraphicsEndImageContext();
+  
+  return roundedImage;
+}
+```
+
+****
+
+###Crash代码
+
+```objc
+[NSString stringWithString:nil];
+```
+
+```objc
+ @{
+  	@"key" : [[NSUserDefaults standardUserDefaults] objectForKey:@"xxxxx"]
+  }
+```
+
+```objc
+NSMutableArray *array = [NSMutableArray new];
+[array addObject:nil];
+    
+NSMutableDictionary *dic = [NSMutableDictionary new];
+[dic setObject:nil forKey:@"key"];
+```
+
+***
+
+```objc
+#define AS_AT_LEAST_IOS7 (kCFCoreFoundationVersionNumber > kCFCoreFoundationVersionNumber_iOS_6_1)
+#define AS_AT_LEAST_IOS7_1 (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_7_1)
+#define AS_AT_LEAST_IOS8 (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_8_0)
+#define AS_AT_LEAST_IOS9 (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_9_0)
+```
+
+***
+
+###xcode插件目录
+
+```
+open ~/Library/Application\ Support/Developer/Shared/Xcode/Plug-ins/
+```
+
+***
+
+###重写-[UIView setFrame:]方法，让系统计算完成的frame再进行二次调整
+
+```
+- (void)setFrame:(CGRect)frame {
+    
+    //1. 对系统计算完成传入的frame进行内部调整
+    CGRect rect = frame;
+    rect.size.width += 100;//对宽度调整增加100
+    
+    //2. 最后让系统设置我们修改过的frame
+    [super setFrame:rect];
+}
+```
+
+***
+
+###统一设置UINavigationBar的UIAppearence
+
+- 设置navigationBar的`背景色`和`titleView的字体颜色`
+
+```
+- (void)customizeInterface {
+
+    //1. 获取全局apppearence
+    UINavigationBar *navigationBarAppearance = [UINavigationBar appearance];
+    
+    //2. 用来保存各种`富文本属性`的字典
+    NSDictionary *textAttributes = nil;
+    
+    //3. 按iOS系统版本，使用不同的方法，来设置属性字典
+    if (NSFoundationVersionNumber < NSFoundationVersionNumber_iOS_6_1) {
+        
+        //3.1 iOS SDK Version > 6.1
+        
+        //返回按钮的箭头颜色
+        [navigationBarAppearance setTintColor:ZSYUIColorFromRGB(0x3333333)];
+        
+        //设置UITextField的光标颜色
+        [[UITextField appearance] setTintColor:[UIColor colorFromHexCode:@"#3bbc79"]];
+        
+        //设置UITextView的光标颜色
+        [[UITextView appearance] setTintColor:[UIColor colorFromHexCode:@"#3bbc79"]];
+        
+        //设置UISearchBar背景颜色
+        [[UISearchBar appearance] setBackgroundImage:[UIImage imageWithColor:[UIColor colorFromHexCode:@"#e5e5e5"]] forBarPosition:0 barMetrics:UIBarMetricsDefault];
+        
+        //设置UITextField字体样式
+        textAttributes = @{
+                           NSFontAttributeName: [UIFont systemFontOfSize:ZSYNavTitleFontSize],
+                           NSForegroundColorAttributeName: [UIColor hex:@"#514647"],
+                           };
+    } else {
+#if __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_7_0
+        [[UISearchBar appearance] setBackgroundImage:[UIImage imageWithColor:[UIColor colorWithHexString:@"#e5e5e5"]]];
+
+        //设置UITextField字体样式
+        textAttributes = @{
+                           NSFontAttributeName: [UIFont systemFontOfSize:ZSYNavTitleFontSize],
+                           NSForegroundColorAttributeName: [UIColor hex:@"#514647"],
+                           UITextAttributeTextShadowColor: [UIColor clearColor],
+                           UITextAttributeTextShadowOffset: [NSValue valueWithUIOffset:UIOffsetZero],
+                           };
+#endif
+    }
+    
+    //NavgationBar Backgroud Color
+    UIImage *image = [UIImage imageWithColor:[UIColor colorFromHexCode:@"#ffffff"]];
+    [navigationBarAppearance setBackgroundImage:image forBarMetrics:UIBarMetricsDefault];
+    [navigationBarAppearance setTitleTextAttributes:textAttributes];
+    
+    //隐藏返回按钮后面的文字
+    UIOffset offset = UIOffsetMake(NSIntegerMin, NSIntegerMin);
+    [[UIBarButtonItem appearance] setBackButtonTitlePositionAdjustment:offset
+                                                         forBarMetrics:UIBarMetricsDefault];
+    
+    //导航栏返回按钮设置图片
+    UIImage *backImage = [[UIImage imageNamed:@"icon_返回"] resizableImageWithCapInsets:UIEdgeInsetsMake(0, 30, 0, 0)];
+    [[UIBarButtonItem appearance] setBackButtonBackgroundImage:backImage
+                                                      forState:UIControlStateNormal
+                                                    barMetrics:UIBarMetricsDefault];
+    
+}
+```
+
+***
+
+###ios7以上，创建UIWindow后使用了makeKeyAndVisble方法，还是不显示在屏幕.
+
+解决: 需要一个变量指针引用，否则局部指针创建完毕就释放了.
+
+***
+
+###获取到deviceToken:NSData类型，解析成字符串
+
+错误方式: 尝试如下方式解析不出来.
+
+```
+NSString *aString = [[NSString alloc] initWithData:adata encoding:NSUTF8StringEncoding];
+```
+
+正确方式: 因为使用的推送框架是网易的，所以需要将得到的deviceTokenData转成如下格式:
+
+* deviceToken是一个NSData
+
+```
+(lldb) po _deviceTokenData
+
+<6c3e0389 70a30337 632b0529 93e52719 f2860bf6 690c9aea 578b6be4 92bf5834>
+```
+
+* _deviceTokenString是一个转换后的字符串
+
+```
+(lldb) po _deviceTokenString
+
+6c3e038970a30337632b052993e52719f2860bf6690c9aea578b6be492bf5834
+```
+
+也就是将NSData内容去掉两端的尖括号和中间的空格.
+
+* 使用如下转换代码，使用 -[NSObject description]
+
+```
+NSString *token = [[[_deviceTokenData description]
+                        stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"<>"]]
+                       stringByReplacingOccurrencesOfString:@" "
+                       withString:@""];
+```
+
+***
+
+###UIButton内部subviews，图片左边，文字右边.
+
+```
+@interface ZSYCustomeButton : UIButton
+@end
+
+@implementation ZSYCustomeButton
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+	
+	//1.     
+    CGRect frame = self.frame;
+    
+    //2. titleLabel布局
+    self.titleLabel.frame = CGRectMake(0,0 , frame.size.width * 0.8, frame.size.height);
+    
+    //3. imageView布局
+    self.imageView.frame = CGRectMake(CGRectGetMaxX(self.titleLabel.frame) + 5, 0, frame.size.width * 0.2, frame.size.height);
+}
+
+@end
+```
+
+***
+
+###UINavigationController设置导航栏的segment选项卡.
+
+```
+- (void)viewDidLoad {
+	[super viewDidLoad];
+	
+	//1. 创建UISegmentedControl
+	UISegmentedControl *segmentedControl = [[UISegmentedControl alloc] initWithItems:@[@"Small", @"Large"]];
+    segmentedControl.segmentedControlStyle = UISegmentedControlStyleBar;
+    segmentedControl.selectedSegmentIndex = 0;
+    [segmentedControl addTarget:self action:@selector(segmentedControlValueDidChange:) forControlEvents:UIControlEventValueChanged];
+    
+    //2. 设置
+    self.navigationItem.titleView = segmentedControl;
+	
+}
+```
+
+***
+
+
+###description写法模板
+
+```objc
+- (NSString *)description {
+    return [NSString stringWithFormat:@"<%@ - %p> %@", [self class], self,
+            @{
+              @"_item" : _item,
+              @"_value" : _value,
+              @"_key" : _key,
+              }
+            ];
+}
+
+- (NSString *)debugDescription {
+    return [self description];
+}
+```
+
+###数组越界判断写法
+
+```objc
+if ((_menuIconNameArray.count - 1) >= indexPath.row) {
+    imageName = _menuIconNameArray[indexPath.row];
+}
+```
+
+###gesture 添加
+
+```objc
+-(void)initViews
+{
+    if (!_backgroundView) {
+        _backgroundView = [[UIView alloc ]initWithFrame:[UIScreen mainScreen].bounds];
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onBackgroundViewTapped:)];
+        tap.delegate = self;
+        [_backgroundView addGestureRecognizer:tap];
+        _backgroundView.backgroundColor = kFQLPopOverMenuBackgroundColor;
+    }
+    
+    if (!_popMenuView) {
+        _popMenuView = [[FQLPopOverMenuView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
+        [_backgroundView addSubview:_popMenuView];
+        _popMenuView.alpha = 0;
+    }
+    
+    [[[UIApplication sharedApplication] keyWindow] addSubview:_backgroundView];
+    
+}
+```
+
+##`objc_msgSend`
+
+```
+((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
+```
