@@ -8,10 +8,36 @@ categories:
 
 记录下一些小技巧
 
+###Macdown 表格语法
 
-***
+```
+| Tables        | Are           | Cool  |
+| ------------- |:-------------:| -----:|
+| col 3 is      | right-aligned | $1600 |
+| col 2 is      | centered      |   $12 |
+| zebra stripes | are neat      |    $1 |
+```
 
-git ssh key
+```
+| Tables        | Are           | 
+| :-------------: |:-------------:| 
+| col 3 is      | right-aligned | 
+| col 2 is      | centered      | 
+| zebra stripes | are neat      | 
+```
+
+
+## 响应码大致分类
+
+```
+1×× 　　保留   
+2×× 　　表示请求成功地接收   
+3×× 　　为完成请求客户需进一步细化请求   
+4×× 　　客户错误   
+5×× 　　服务器错误  
+```
+
+## git ssh key
 
 1.如何生成ssh公钥
 你可以按如下命令来生成sshkey
@@ -724,26 +750,6 @@ id object = [NSKeyedUnarchiver unarchiveObjectWithData:[NSData dataWithContentsO
 
 ***
 
-###Macdown 表格语法
-
-```
-| Tables        | Are           | Cool  |
-| ------------- |:-------------:| -----:|
-| col 3 is      | right-aligned | $1600 |
-| col 2 is      | centered      |   $12 |
-| zebra stripes | are neat      |    $1 |
-```
-
-```
-| Tables        | Are           | 
-| :-------------: |:-------------:| 
-| col 3 is      | right-aligned | 
-| col 2 is      | centered      | 
-| zebra stripes | are neat      | 
-```
-
-***
-
 ###所有的网络请求错误code，在`NSURLError.h`可以找到如下code定义
 
 ```
@@ -887,9 +893,7 @@ NS_ENUM(NSInteger)
 
 ####UIView控件内部应该使用`注册通知`来代替使用`设置自己为代理`
 
-***
-
-###方法中声明一个Block变量（NSBlock类型的对象）
+##方法中声明一个Block变量（NSBlock类型的对象）
 
 ```objc
 - (void)func {
@@ -902,7 +906,7 @@ NS_ENUM(NSInteger)
 }
 ```
 
-###id指针 与 void*指针 的区别
+## id指针 与 void*指针 的区别
 
 - 首先都是任意类型的指针
 - 区别只是
@@ -911,19 +915,7 @@ NS_ENUM(NSInteger)
 
 
 
-###响应码大致分类
-
-```
-1×× 　　保留   
-2×× 　　表示请求成功地接收   
-3×× 　　为完成请求客户需进一步细化请求   
-4×× 　　客户错误   
-5×× 　　服务器错误  
-```
-
-***
-
-###解决手动的为每个属性或每个方法都去指定nonnull和nullable修饰符
+## 解决手动的为每个属性或每个方法都去指定nonnull和nullable修饰符
 
 - 苹果为了减轻我们的工作量，专门提供了两个宏：	
 	- NS_ASSUME_NONNULL_BEGIN 开始
@@ -1441,8 +1433,38 @@ if ((_menuIconNameArray.count - 1) >= indexPath.row) {
 }
 ```
 
-##`objc_msgSend`
+## `objc_msgSend` 函数类型转换的格式
 
 ```
 ((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
+```
+
+## 后台任务
+
+```objc
+@implementation FQLNetworkCacheManager {
+    UIBackgroundTaskIdentifier _bgTask;//注意: 一定要保存起来
+}
+
+- (void)_updateLocalItemListToDiskFilesWhenTerminal {
+
+	//1. 开启一个后台任务
+    _bgTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+        [[UIApplication sharedApplication] endBackgroundTask:bgTask];
+        _bgTask = UIBackgroundTaskInvalid;
+    }];
+
+	//2. 后台任务要完成的代码
+    [self _doWork];
+
+	// 3. 结束后台任务
+    [[UIApplication sharedApplication] endBackgroundTask:bgTask];
+    _bgTask = UIBackgroundTaskInvalid;
+}
+
+- (void)_doWork{
+	后台线程做的事情
+}
+
+@end
 ```
