@@ -6,7 +6,7 @@ comments: true
 categories: 
 ---
 
-###同事遇到了一个bug，问我这个bug是不是由于这个自定义对象深拷贝引起。我第一反应是《Effective Objective-C 2.0》上说的Objtive-C没有直接提供深拷贝的方法，我当时真的想建议一下他去看下这本书。
+### 同事遇到了一个bug，问我这个bug是不是由于这个自定义对象深拷贝引起。我第一反应是《Effective Objective-C 2.0》上说的Objtive-C没有直接提供深拷贝的方法，我当时真的想建议一下他去看下这本书。
 
 当时我也不太特别肯定，也可能我自己也理解的不正确，回去我自己好好了解了下。
 
@@ -18,7 +18,7 @@ categories:
 
 ****
 
-###前面第一个问题，Objective-C中有提供直接深拷贝对象的方法吗？
+### 前面第一个问题，Objective-C中有提供直接深拷贝对象的方法吗？
 
 首先从《Effective Objective-C 2.0》书上很清楚的说道:
 
@@ -28,11 +28,10 @@ categories:
 
 我觉得这样是可以的，但是Foundation类基本上都是使用的浅拷贝方式来实现NSCopying协议与NSMutableCopy协议。所以我觉得就不要去打破苹果的这种约定，我们可以通过额外协议来规定使用`深拷贝`的方式来实现NSCopying协议与NSMutableCopy协议，来完成可变与不可变版本的深拷贝。
 
-***
 
-###不管是浅拷贝与深拷贝、可变与不可变，首先需要实现拷贝对象的功能 >>> 实体类必须实现NSCopying协议中对象方法，来完成该类的对象拷贝。
+## 不管是浅拷贝与深拷贝、可变与不可变，首先需要实现拷贝对象的功能 >>> 实体类必须实现NSCopying协议中对象方法，来完成该类的对象拷贝。
 
-####iOS提供了两种拷贝对象的协议:
+### iOS提供了两种拷贝对象的协议:
 
 [对象 copy] >>> 得到该类的 `不可变`版本的对象（不关心浅拷贝or深拷贝）
 
@@ -54,16 +53,15 @@ categories:
 @end
 ```
 
-####我听很多人说:
+### 我听很多人说:
 
 - （1）第一个协议是浅拷贝实现，第二个协议是深拷贝实现。
 - （2）或者有的说自己实现如上方法来分别做浅拷贝or深拷贝实现。
 
 第一种说法，从《Effective Objective-C 2.0》所示错的很离谱。而第二种说法一定程度上是正确的，但是不建议这么做，后面有更好的做法。
 
-***
 
-####如何去决定实现哪一种协议完成拷贝了？首先可以先告诉答案，来自《Effective Objective-C 2.0》书上，并且觉得也确实很有道理。
+## 如何去决定实现哪一种协议完成拷贝了？首先可以先告诉答案，来自《Effective Objective-C 2.0》书上，并且觉得也确实很有道理。
 
 - 如果当前类的对象分为: 可变版本 与 不可变版本
 	- 分别实现NSCopying协议、NSMutableCopying协议
@@ -73,11 +71,9 @@ categories:
 - 如果当前类的对象就只存在: 一种不可变版本 或 一种可变版本
 	- 只实现NSCopying协议 或 NSMutableCopying协议 其中的一种
 
-****
+##那么就来看下对象经过`浅拷贝`和`深拷贝`之后得到的对象的区别:
 
-###那么就来看下对象经过`浅拷贝`和`深拷贝`之后得到的对象的区别:
-
-####从书上截取的浅拷贝与深拷贝的区别图示:
+###从书上截取的浅拷贝与深拷贝的区别图示:
 
 ![Snip20160520_1.png](http://imgchr.com/images/Snip20160520_1.png)
 
@@ -95,22 +91,20 @@ categories:
 		-  会对原始对象内部的子对象继续执行`拷贝`操作
 		-  也即是`会`创建新的子对象，并从原始对象中的子对象复制数据（就是执行[子对象 copy]）
 
-####按照书上的话，小结下深拷贝:
+### 按照书上的话，小结下深拷贝:
 
 > 在拷贝对象自身时，将该对象内部子数据也一并复制。Foundation框架中的 collection类在默认情况下都执行`浅拷贝`，也就是说，`只拷贝对象本身`，而不对其内部子对象进行拷贝。
 
-####说这么多，只想说明前面说的关于 `浅拷贝与深拷贝、可变与不可变，这是两个不同的话题`这句话的含义。
+### 说这么多，只想说明前面说的关于 `浅拷贝与深拷贝、可变与不可变，这是两个不同的话题`这句话的含义。
 
 - copy与mutableCopy并不是就是指，浅拷贝 or 深拷贝
 - copy与mutableCopy只是用于一个类分为`可变`与`不可变`两个版本时的`拷贝对象`之间的切换
 - 而深拷贝 or 浅拷贝，意味着`对原始对象内部子对象`是否`继续执行拷贝`还是`直接指向`
 
 
-####但是，`copy、mutableCopy` 与 `浅拷贝、深拷贝`之间又是有关系的。
+### 但是，`copy、mutableCopy` 与 `浅拷贝、深拷贝`之间又是有关系的。
 
-***
-
-###先从copyWithZone:传入的zone对象干什么的开始
+##先从copyWithZone:传入的zone对象干什么的开始
 
 - Zone: 一个单独的区
 
@@ -118,9 +112,7 @@ categories:
 
 - 而现在的统一使用一个公用的Zone，所以不必关系Zone这个参数值
 
-****
-
-###Effective Objective-C 2.0 上指明的NSCopying协议与NSMutableCopying协议的区别:
+##Effective Objective-C 2.0 上指明的NSCopying协议与NSMutableCopying协议的区别:
 
 > mutableCopy这个 “辅助方法”（helper）与 copy相似，也是用默认的 zone 参数来调用 “mutableCopyWithZone:”。如果你的类分为 可变版本（mutable variant） 与 不可变版本（immutable variant），那么就应该实现NSMutableCopying协议。若采用此模式，则在 可变类 中覆写 “copyWithZone:” 时，不要返回 可变的拷贝，而应该返回一份不可变的版本。无论当前实例是否可变，若需要获取可变版本的拷贝，均应调用 mutableCopy 方法。同理若需要不可变对象，则总应该调用 copy 方法来获取。
 
@@ -130,9 +122,9 @@ categories:
 
 > 而关于 浅拷贝还是深拷贝， 却是另外一个问题。但是可变与不可变 和 深拷贝与浅拷贝 之前有是有联系的。
 
-####个人总结的关于: 可不可变 与 对象浅拷贝or深拷贝 这两个话题之间的关系
+### 个人总结的关于: 可不可变 与 对象浅拷贝or深拷贝 这两个话题之间的关系
 
-![](http://i12.tietuku.cn/da787550ed3d3889.png)
+![](http://a3.qpic.cn/psb?/V11ePBui4Hz4Py/PKhFu7UlP5dsYHOqaGIwotWvMWvAWYl1Sipcmtw4N2o!/b/dI8AAAAAAAAA&bo=gALqAQAAAAABB0k!&rf=viewer_4)
 
 那么说一个对象拷贝的工作，那么有四种情况:
 
@@ -145,7 +137,7 @@ categories:
 
 而对于Foundation类，默认只是使用 1与3 两种对象拷贝的方式.
 
-####所以我觉得在完成一个对象拷贝的操作时，你需要考虑两个问题
+### 所以我觉得在完成一个对象拷贝的操作时，你需要考虑两个问题
 
 - 问题一、将要获取 原始对象的 `可变版本` 还是 `不可变版本` ？
 	- 可变 >>> 实现`NSCoyping`协议方法，最终返回一个`不可变`对象
@@ -155,9 +147,7 @@ categories:
 	- 浅拷贝 >>> 只对容器对象本身进行拷贝，不对内部子对象拷贝
 	- 深拷贝 >>> 除了对容器对象本身进行拷贝，仍然还要对内部子对象拷贝
 
-****
-
-###一个类的对象分为 可变 or 不可变 两个版本
+##一个类的对象分为 可变 or 不可变 两个版本
 
 就是能不能改变一个对象的各种属性值，例如: NSArray与NSMutableArray、NSURLRequest与NSNSMutableURLRequest.
 
@@ -210,13 +200,11 @@ categories:
 @end
 ```
 
-****
-
-###看下NSArray与NSMutableArray的copy与mutableCopy的作用
+##看下NSArray与NSMutableArray的copy与mutableCopy的作用
 
 > 针对容器对象（Array、Set、Dictionary）.
 
-####NSArray的copy与mutableCopy
+### NSArray的copy与mutableCopy
 
 ```objc
 - (void)testFoundation1 {
@@ -283,7 +271,7 @@ categories:
 
 所以也就是说NSArray内部的数组类对于NSCoying协议与NSMutableCopying协议都是使用的`浅拷贝`方式来完成拷贝的。
 
-###NSMutableArray的copy与mutableCopy
+### NSMutableArray的copy与mutableCopy
 
 ```objc
 - (void)testFoundation1 {
@@ -359,13 +347,13 @@ categories:
 
 所以也就是说NSMutableArray内部的数组类对于NSCoying协议与NSMutableCopying协议都是使用的`浅拷贝`方式来完成拷贝的。
 
-####NSArray、NSMutableArray，不管是copy还是mutableCopy拷贝出来的数组对象`内部的子元素对象`，都是直接指向`原始数组内部所有的对象`.
+### NSArray、NSMutableArray，不管是copy还是mutableCopy拷贝出来的数组对象`内部的子元素对象`，都是直接指向`原始数组内部所有的对象`.
 
 > 所以Foundation类在实现NSCopying协议和NSMutableCopying协议时，都是采用的`浅拷贝`对象的方式来实现。
 
 Foundation 框架中的所有 集合类（Set、Array、Dic）在默认情况下都执行的是`浅拷贝`。也就是说只拷贝容器对象本身，而不继续对容器内部子元素对象进行拷贝，而是直接指向。
 
-####这样做的主要原因:
+### 这样做的主要原因:
 
 - 因为并不知道容器内`子元素对象`是否能够继续执行copy拷贝（是否实现了NSCopying协议、NSMutableCopying协议）.
 - 外部容器对象，也不一定需要拷贝得到所有`新的`的子元素对象.
@@ -374,16 +362,14 @@ Foundation 框架中的所有 集合类（Set、Array、Dic）在默认情况下
 
 但是在有些情况下，的确需要对 `Foundation容器对象` 或 `我们自己的某个实体类对象`使用`深拷贝`的形式来完成拷贝的工作 >>> 不想对拷贝对象内部对象的修改去影响到原来对象内部的子对象。
 
-****
-
-###NSArray、NSDictionary、NSSet提供了`深拷贝`对象的方法api >>> initWithXxx:copyItems:，第二个copyItem:这个参数传一个BOOL值.
+## NSArray、NSDictionary、NSSet提供了`深拷贝`对象的方法api >>> initWithXxx:copyItems:，第二个copyItem:这个参数传一个BOOL值.
 
 如果YES，表示继续对容器内子对象进行copy。
 如果NO，表示直接指向容器内子对象，不进行copy。
 
 > 注意、只是对象的深拷贝，并没有涉及可变与不可变。深拷贝得到的类型，与当前调用拷贝方法的类型一致。
 
-####通过 NSArray 提供的 深拷贝/浅拷贝 方法
+### 通过 NSArray 提供的 深拷贝/浅拷贝 方法
 
 ```objc
 User *user1 = [User new];
@@ -448,7 +434,7 @@ id copy8 = [[NSArray alloc] initWithArray:array copyItems:NO];
 0x00007ffa827221a0
 ```
 
-####通过 NSMutableArray 提供的 深拷贝/浅拷贝 方法
+### 通过 NSMutableArray 提供的 深拷贝/浅拷贝 方法
 
 ```objc    
 User *user1 = [User new];
@@ -530,11 +516,9 @@ initWithSet:copyItems:
 
 注意仅仅只是选择`浅拷贝 or 深拷贝`，并没有选择可变不可变，对象的类型与之前类型保持一致。
 
-****
+## 前面是NSArray/NSDictionry/NSSet容器类已经提供了`深拷贝`的api，但是给一个普通的NSObject类的对象提供`深拷贝`的功能了？
 
-###前面是NSArray/NSDictionry/NSSet容器类已经提供了`深拷贝`的api，但是给一个普通的NSObject类的对象提供`深拷贝`的功能了？
-
-####有如下两种方法
+### 有如下两种方法
 
 - 第一种、对一个类按照 `深拷贝` 的方式去实现`NSCopying协议` 或 `NSMutableCopying协议`
 
@@ -579,9 +563,7 @@ initWithSet:copyItems:
 
 具体类自己根据情况是否可变，来觉得去实现哪一个协议，并使用深拷贝的方式来完成最终的对象拷贝.
 
-****
-
-###看一个摘录自书上使用 `浅拷贝` + `不可变` 来实现对象拷贝
+## 看一个摘录自书上使用 `浅拷贝` + `不可变` 来实现对象拷贝
 
 ```objc
 #import <Foundation/Foundation.h>
@@ -670,15 +652,13 @@ initWithSet:copyItems:
 @end
 ```
 
-****
+## 对上面例子改用使用 `深拷贝` + `不可变` 来实现对象拷贝
 
-###对上面例子改用使用 `深拷贝` + `不可变` 来实现对象拷贝
-
-####首先定义一个提供`深拷贝`方式的协议
+### 首先定义一个提供`深拷贝`方式的协议
 
 > 不要在原来的NSCopying协议方法实现中修改成深拷贝的方式，而是在新协议的方法中实现深拷贝方式。注意，与之前一样，在深拷贝方式下，也分为可变版本与不可变版本的拷贝对象。
 
-####EOCPerson类实现深拷贝协议方法
+### EOCPerson类实现深拷贝协议方法
 
 ```
 #import <Foundation/Foundation.h>
@@ -824,11 +804,9 @@ initWithSet:copyItems:
 
 在如上对应的协议方法中，使用深拷贝的方式进行对象拷贝即可.
 
-****
+## 什么时候实现NSCopying协议？什么时候实现NSMutableCopying协议？什么时候实现自定义的深拷贝协议？
 
-###什么时候实现NSCopying协议？什么时候实现NSMutableCopying协议？什么时候实现自定义的深拷贝协议？
-
-####一、不强制要求使用`深拷贝`的方式进行对象拷贝
+#### 一、不强制要求使用`深拷贝`的方式进行对象拷贝
 
 - 当一个类不区分 可变版本与不可变版本，就是一种不可变情况
 
@@ -846,13 +824,11 @@ initWithSet:copyItems:
 		- 使用`浅拷贝`方式完成拷贝
 	- 如果一定要求使用`深拷贝`，那么实现自定义深拷贝协议
 
-####二、强制要求使用`深拷贝`的方式进行对象拷贝
+#### 二、强制要求使用`深拷贝`的方式进行对象拷贝
 
 - 实现自定义深拷贝协议方法，使用使用`深拷贝`方式完成对象拷贝
 
-****
-
-###书上对拷贝的总结
+## 书上对拷贝的总结
 
 - 若想让自己编写的类的对象具备拷贝功能，则需要实现NSCopying协议
 
@@ -863,11 +839,9 @@ initWithSet:copyItems:
 - 如果你写的对象需要执行`深拷贝`，那么可以考虑新增一个专门描述深拷贝的协议方法
 
 
-****
+## 第二个问题，改变容器内子对象属性值好吗？
 
-###第二个问题，改变容器内子对象属性值好吗？
-
-####首先明白`对象等同性`的概念 >>> 属于同一个类的对象，而且所有的属性值全部相对.
+### 首先明白`对象等同性`的概念 >>> 属于同一个类的对象，而且所有的属性值全部相对.
 
 看看NSString给出的对象等同性的方法，注意有两种方法
 
@@ -895,7 +869,7 @@ initWithSet:copyItems:
 
 如上有两种方法，一个是“isEqual:” , 一个是“isEqualToString:”，有什么区别了？
 
-####NSObject协议声明的的 “isEqual:”
+### NSObject协议声明的的 “isEqual:”
 
 ```objc
 @protocol NSObject
@@ -910,7 +884,7 @@ initWithSet:copyItems:
 
 可以看到isEqual: 是不区分传入的对象的类型.
 
-####NSString自己实现的 “isEqualToString:”
+### NSString自己实现的 “isEqualToString:”
 
 ```objc
 //分类提供的
@@ -924,19 +898,19 @@ initWithSet:copyItems:
 
 限制了传入的对象类型，必须是NSString.
 
-####那么应该优先调用单独提供的“isEqualToString:”来判断对象等同性，就已经去掉了对象所属类型判断。
+### 那么应该优先调用单独提供的“isEqualToString:”来判断对象等同性，就已经去掉了对象所属类型判断。
 
 - NSObject协议实现类NSObject类，实现了“isEqual:”对象等同判断.
 - 但是对于我们自定义的NSObject子类，需要单独提供类似NSString提供的“isEqualToString:”限制传入的对象类型
 	- 如果类型不一致，编译器会自动显示黄色警告
 
-####从上面的isEqual:声明出，看到NSObject协议中还声明了一个只读的hash属性
+### 从上面的isEqual:声明出，看到NSObject协议中还声明了一个只读的hash属性
 
 - 如果两个NSObject对象，使用 “isEqul:” 比较返回YES，那么两个对象的hash属性值就`一定相等`.
 
 - 但是反过来，两个对象的hash属性值相等时，`不一定`使用 “isEqul:” 比较返回YES.
 
-####实现一个类的对象等同性判断的二个步骤
+### 实现一个类的对象等同性判断的二个步骤
 
 - 假定类属性声明这样的
 
@@ -982,7 +956,7 @@ initWithSet:copyItems:
 ```
 
 
-####对于重写一个类的hash属性方法的算法
+### 对于重写一个类的hash属性方法的算法
 
 ```objc
 @interface Person : NSObject
@@ -1017,11 +991,11 @@ initWithSet:copyItems:
 
 可以看到，对象的hash属性值，是通过该对象的所有其他属性值的hash值通过异或运算计算得到。那么也就是说，`修改了对象的其他数据属性值`，那么就意味着`该对象的hash属性值也跟着改变了`。
 
-####为什么要说对象的hash属性值了？是有原因的，当一个Person对象加入到NSArray、NSSet、NSDictionary等容器对象中时，对象的hash属性值很重要的.
+### 为什么要说对象的hash属性值了？是有原因的，当一个Person对象加入到NSArray、NSSet、NSDictionary等容器对象中时，对象的hash属性值很重要的.
 
 分别针对Array/Set/Dictionary看看各有什么区别.
 
-###Array
+### Array
 
 - 对象加入是有顺序的，挨个往后面空位置放入新对象
 - 如果在修改内部某个位置的对象属性值，造成该位置上对象的hash值改变
@@ -1083,9 +1057,8 @@ initWithSet:copyItems:
 
 看出来对于Array因为是有固定下标指定一个对象，所以修改内部对象属性值是没有关系的.
 
-****
 
-###Set
+### Set
 
 - set是`无顺序`存放对象
 
@@ -1093,7 +1066,7 @@ initWithSet:copyItems:
 	- 确切的说是两个`等同`的对象
 	- [obj1 isEqual:obj2] == YES时，就只会存储obj1与obj2其中的一个
 
-####下面看个例子一、没有重写User类的`isEqual:`判断对象等同的时候
+### 下面看个例子一、没有重写User类的`isEqual:`判断对象等同的时候
 
 ```objc
 - (void)testHash2 {
@@ -1155,7 +1128,7 @@ initWithSet:copyItems:
 - NSObject实现的isEqual:方法返回上面的对象都不是等同的，但是属性值确实都是相等的（后面自己修改下模拟NSString的实现）
 - 但是如上的几个User对象其实属性值都相等，如果此时让NSSet只会保存一个User对象，就需要让 -[User isEqual:] 返回YES.
 
-####下面看个例子二、自己重写User类的`isEqual:`判断对象等同的时候
+### 下面看个例子二、自己重写User类的`isEqual:`判断对象等同的时候
 
 - 首先对User类进行改写
 
@@ -1228,9 +1201,7 @@ initWithSet:copyItems:
 
 OK，这样就达到目标了，主要就是重写isEqual:自己完成对象的等同判断的逻辑.
 
-****
-
-###Dictionary
+## Dictionary
 
 本身就是按照key-value形式存储，随时可以对key指向的value进行修改.
 

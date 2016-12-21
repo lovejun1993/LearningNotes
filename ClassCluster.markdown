@@ -6,7 +6,7 @@ comments: true
 categories: 
 ---
 
-###相信搞过iOS的都知道类簇的概念，比如 NSNumber 、 NSString 、 NSArray 等等都是类簇。那到底类簇是什么意思？用来干嘛？
+### 相信搞过iOS的都知道类簇的概念，比如 NSNumber 、 NSString 、 NSArray 等等都是类簇。那到底类簇是什么意思？用来干嘛？
 
 类簇其实是一种设计模式，估计知道的人很少，使用的人就更少了。名字叫做 >>> 抽象工厂。
 
@@ -213,9 +213,7 @@ while (class_getInstanceMethod(currentClass, @selector(resume))) {
 
 到此为止，AFN中关于类簇类的就这样了。如果知道类簇概念的可能一看就知道，如果不知道类簇概念的童鞋，可能已经晕了。
 
-***
-
-###那么有必要先看下抽象工厂模式
+## 那么有必要先看下抽象工厂模式
 
 - 主要的核心概念:
 	- 抽象工厂 : 具体工厂 == 1 : n（一个抽象工厂，多个具体工厂）
@@ -934,7 +932,7 @@ NSArray *arr5 = @[@1];
 @end
 ```
 
-####入口类内部依赖的不同系统下的实现类
+### 入口类内部依赖的不同系统下的实现类
 
 - iOS6下的实现类
 
@@ -1002,7 +1000,7 @@ NSArray *arr5 = @[@1];
 @end
 ```
 
-####最后是客户只需要找到入口类MyTool即可，而不需要知道如上的具体版本下的某一个实现类.
+### 最后是客户只需要找到入口类MyTool即可，而不需要知道如上的具体版本下的某一个实现类.
 
 ```objc
 - (void)test3 {
@@ -1022,7 +1020,7 @@ NSArray *arr5 = @[@1];
 > 核心: 向调用者屏蔽内部所有的私有的具体实现类的信息，只需要当做类簇类一样的使用即可。
 
 
-###再记录一个来自Effect OC-2.0书上的一个问题，就是比较一个NSArray的对象的类型
+### 再记录一个来自Effect OC-2.0书上的一个问题，就是比较一个NSArray的对象的类型
 
 如果已经弄明白NSArray/MyTool作为类簇的作用，那么你应该能立刻判断出如下两种写法哪一种是错误的。
 
@@ -1056,7 +1054,7 @@ if ([array isKindOfClass:[NSArray class]]) {
 
 > 答案: 情况一的Class比较是错误的。情况二是正确的。
 
-####下面是原因（如果之前的弄懂了其实已经不用看原因了）:
+### 下面是原因（如果之前的弄懂了其实已经不用看原因了）:
 
 - 1) NSArray是一个类簇类，也就是说只是一个入口类
 - 2) 最终创建返回的对象绝对不是NSArray的对象，而是如下三种类型:
@@ -1072,7 +1070,7 @@ if ([array isKindOfClass:[NSArray class]]) {
 	- [NSArray class] != [__NSArrayI class]
 	- [NSArray class] != [__NSArrayM class]
 
-####所以对于一些`类簇类`比较类型时:
+### 所以对于一些`类簇类`比较类型时:
 
 - 不要使用 `if( [对象 class] == [类簇 class] ) {}`来对类簇返回的类对象的类型进行比较，因为`永远都不会成立`
 
@@ -1080,31 +1078,31 @@ if ([array isKindOfClass:[NSArray class]]) {
 	- isKindOfClass: 会一直通过 `类对象的isa指针` 查找 `super_class`
 	- 而 `__NSArrayI、__NSArray0、__NSArrayM` 都是 继承自 `类簇NSArray` 
 
-***
+## 那么到此为止，类簇的作用已经很明显 >>> 向外屏蔽内部使用的各种私有的具体实现类.
 
-###那么到此为止，类簇的作用已经很明显 >>> 向外屏蔽内部使用的各种私有的具体实现类.
-
-####那么前面的一个问题，类簇和抽象工厂模式有什么关系？
+### 那么前面的一个问题，类簇和抽象工厂模式有什么关系？
 
 看下前面关于MyTool进行不同的iOS系统版本适配的的结构图
 
 [![Snip20160512_2.png](http://imgchr.com/images/Snip20160512_2.png)](http://imgchr.com/image/Ply)
 
-####其实 MyTool这个类，就是一个工厂，且是一个具体工厂（因为没有实现接口的形式暴露出去），而他生成的产品就是实现了 `- (void)doWork;`方法的具体类的一个对象:
+### 其实 MyTool这个类，就是一个工厂，且是一个具体工厂（因为没有实现接口的形式暴露出去），而他生成的产品就是实现了 `- (void)doWork;`方法的具体类的一个对象:
 
 - MyTool_iOS6 实现类一
 - MyTool_iOS7 实现类二
 - MyTool_iOS8 实现类三
 
-####我自己的理解就是，类簇模式 = `一个工厂 + n多个该工厂管理的且实现了同一个抽象产品接口的具体产品类`
+我自己的理解就是，
+
+```
+类簇模式 = 一个工厂 + n多个该工厂管理的且实现了同一个抽象产品接口的具体产品类
+```
 
 不像抽象工厂，存在多种不同的产品类型共存的情况.
 
-****
+## 前面还说过NSString也是类簇，那么也来看看
 
-###前面还说过NSString也是类簇，那么也来看看
-
-####[NSString alloc] 与 [NSMutableString alloc] 返回的内部真实的私有类型
+### [NSString alloc] 与 [NSMutableString alloc] 返回的内部真实的私有类型
 
 ```objc
 - (void)string1 {
@@ -1121,7 +1119,7 @@ if ([array isKindOfClass:[NSArray class]]) {
 (NSPlaceholderMutableString *) obj2 = 0x00007ff378701f30
 ```
 
-####[NSPlaceholderString对象 init] 与 [NSPlaceholderMutableString init] 返回的最终私有类型
+### [NSPlaceholderString对象 init] 与 [NSPlaceholderMutableString init] 返回的最终私有类型
 
 ```objc
 - (void)string1 {
@@ -1146,7 +1144,7 @@ if ([array isKindOfClass:[NSArray class]]) {
 - 可变字符串最终使用类型 >>> __NSCFString
 
 
-####NSString内部管理私有类 >>> __NSCFConstantString（不可变、常量字符串）
+### NSString内部管理私有类 >>> __NSCFConstantString（不可变、常量字符串）
 
 ```objc
 - (void)string1 {
@@ -1175,7 +1173,7 @@ if ([array isKindOfClass:[NSArray class]]) {
 
 - 其类型是 `__NSCFConstantString ` >>> 常量字符串
 
-####NSString内部管理私有类 >>> __NSCFString（可变字符串）
+### NSString内部管理私有类 >>> __NSCFString（可变字符串）
 
 ```
 NSMutableString *str2 = [@"1111" mutableCopy];
@@ -1185,7 +1183,7 @@ NSMutableString *str2 = [@"1111" mutableCopy];
 NSMutableString *str3 = [[NSMutableString alloc] initWithString:@"Haha"];
 ```
 
-####NSString内部管理私有类 >>> NSTaggedPointerString
+### NSString内部管理私有类 >>> NSTaggedPointerString
 
 ```
 NSString *str1 = [NSString stringWithFormat:@"Haha %d", 111];
@@ -1193,9 +1191,7 @@ NSString *str1 = [NSString stringWithFormat:@"Haha %d", 111];
 
 还有一个path的string暂时找不到事怎么弄出来的...
 
-***
-
-###类簇 >>> 提供一个统一入口类，来隐藏内部n多的真实的私有类
+## 类簇 >>> 提供一个统一入口类，来隐藏内部n多的真实的私有类
 
 个人觉得 类簇 与 抽象工厂 还是有一定的区别:
 

@@ -339,17 +339,23 @@ ViewController使用自定义的NSThread
 2016-11-27 16:23:01.345 RunLoopBasic[4685:69314] MyThread doWork >>>> <MyThread - 0x7fae2b623390>: isExecuting = 1, isCancelled = 0, isFinished = 0
 ```
 
-> 第一个发现、给runloop添加一个NSMachPort事件源之后，thread的状态和之前不一样了
+###可以看到当给thread的runloop，添加了一个NSMachPort事件源之后，有两个关键性的地方变了
+
+
+- (1) 给runloop添加一个NSMachPort事件源之后，thread的状态和之前不一样了
 
 ```c
 - (1) thread.isExecuting = 1
 - (2) thread.isFinished = 0
 ```
 
-> 第二个发现，doInitThread实现中的第4句NSLog打印的代码没有被执行
+- (2) doInitThread实现，中的第4句NSLog打印的代码没有被执行
 
-
-###上面说明给runloop添加一个事件源source之后，那么线程就一直处于`isExecuting = 1`的状态，而且`[runloop run];`之后的代码都不会被执行，也就是说thread不会结束执行
+```
+- runloop成功开启之后
+- 会卡住当前执行[runloop run]实现函数流程
+- 因为CFRunloopRun()函数内部是一个do while的循环
+```
 
 测试下给runloop添加一个事件源source之后，`[runloop run];`之后的代码都不会被执行
 
@@ -453,14 +459,14 @@ ViewController使用自定义的NSThread
 2016-11-27 16:34:27.364 RunLoopBasic[5320:79676] after performSelector >>>> <MyThread - 0x7faf6b513400>: isExecuting = 0, isCancelled = 0, isFinished = 1
 ```
 
-可以看到，只要不给runloop添加port事件源，直接开启runloop，那么就会:
+可以看到，只要不给runloop添加port事件源，直接开启runloop:
 
 - (1) `[runloop run]`后面的代码继续执行
 - (2) thread进入init的时候，`thread.isExecuting = 1`
 - (3) thread执行完init的时候，`thread.isFinished = 1`
 - (4) 后续分配任务给thread时候，`thread.isFinished = 1`
 
-OK，那将3.3句代码打开后，程序运行后以及点击屏幕2次后的输出
+将3.3句代码打开后，程序运行后以及点击屏幕2次后的输出
 
 ```
 2016-11-27 16:36:49.665 RunLoopBasic[5455:81894] doInitThread >>>> 添加port事件之前

@@ -1,5 +1,5 @@
 
-##关于NSNotificationCenter的小东西
+## 关于NSNotificationCenter的小东西
 
 主要的提纲
 
@@ -12,7 +12,7 @@
 6. 使用`NSNotificationQueue`可以完成异步发送通知，异步通知处理
 ```
 
-###NSNotificationCenter不会对`addObserver:对象`进行retain
+### NSNotificationCenter不会对`addObserver:对象`进行retain
 
 ```objc
 @interface MyView : UIView
@@ -55,7 +55,7 @@
 
 确实是不会retain传入的obsever对象。
 
-###NSNotificationCenter直接使用的是observer对象的地址
+### NSNotificationCenter直接使用的是observer对象的地址
 
 > 所以对于observer对象在dealloc时，一定要removeObserver，否则会出现野指针。
 
@@ -100,7 +100,7 @@
 ```
 
 
-###A线程发送通知，B线程关注通知
+### A线程发送通知，B线程关注通知
 
 - 主线程添加observer，子线程发送notification
 
@@ -172,7 +172,7 @@
 
 发现也是可以收到通知的，那么在dealloc时也需要removeObserver。以前我一直认为在A线程发送通知，那么只能在A线程注册通知.....囧。
 
-###可以得到如下几点:
+### 可以得到如下几点:
 
 - (1) NSNotificationCenter是多线程安全的
 - (2) 和在`哪个线程进行addObserver`没啥关系
@@ -182,7 +182,7 @@
 
 那这样，如果在子线程post通知，就有可能因为修改UI而造成程序崩溃。
 
-###如果想要 `发送通知` 和 `接收通知处理` 这两个步骤强制处于一个线程上了？
+### 如果想要 `发送通知` 和 `接收通知处理` 这两个步骤强制处于一个线程上了？
 
 ```objc
 static NSString *key = @"haha";
@@ -299,6 +299,6 @@ static NSString *key = @"haha";
 
 如上只是一个实现通知重定向的最简单的思路，可以将这些代码封装成一个NSNotificationCenter的子类去完成。
 
-###[NSNotificationCenter post...]都是同步转发通知，通过NSNotificationQueue可以异步子线程post通知
+### `[NSNotificationCenter post...]`都是同步转发通知，通过NSNotificationQueue可以异步子线程post通知
 
 ....代码就不贴了

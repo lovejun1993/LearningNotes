@@ -6,11 +6,11 @@ comments: true
 categories: 
 ---
 
-###也是关于周末看NSProgress使用中看到了一些关于KVO的一些东西，之前自己其实也对KVO知道的挺少的，一直停留在KVO就是重写了setter方法实现，然后发送KVO通知。
+### 也是关于周末看NSProgress使用中看到了一些关于KVO的一些东西，之前自己其实也对KVO知道的挺少的，一直停留在KVO就是重写了setter方法实现，然后发送KVO通知。
 
 ***
 
-###仍然打开苹果开发文档进去看下KVO的描述介绍
+### 仍然打开苹果开发文档进去看下KVO的描述介绍
 
 https://developer.apple.com/library/mac/documentation/Cocoa/Reference/Foundation/Protocols/NSKeyValueObserving_Protocol/
 
@@ -75,7 +75,7 @@ typedef struct objc_class *Class;
 
 ****
 
-###Registering Dependent Keys
+## Registering Dependent Keys
 
 https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueObserving/Articles/Articles/KVODependentKeys.html#//apple_ref/doc/uid/20002179-BAJEAIEE
 
@@ -83,7 +83,7 @@ https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueO
 
 > To-one Relationships
 
-####第一个具有依赖属性的实体类.
+### 第一个具有依赖属性的实体类.
 
 ```objc
 @interface Person : NSObject
@@ -128,7 +128,7 @@ https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueO
 
 总之就是告诉系统，当firstname和lastname属性值发生变化时，会触发fullname属性值变化的回调处理.
 
-####然后是测试监听Person类的fullname属性值改变
+### 然后是测试监听Person类的fullname属性值改变
 
 ```objc
 static void *PersonKVOContext = &PersonKVOContext;
@@ -230,7 +230,7 @@ The `keyPathsForValuesAffectingValueForKey:` method does not support key-paths t
 
 那么同样以一个例子来看下使用.
 
-####实体类Person
+### 实体类Person
 
 ```objc
 #import <Foundation/Foundation.h>
@@ -380,7 +380,7 @@ static void *Person_cars_KVOContext = &Person_cars_KVOContext;
 @end
 ```
 
-####测试修改Person对象的Car数组属性，随即获得修改后的Car数组的Car对象的totoalPrice属性值
+### 测试修改Person对象的Car数组属性，随即获得修改后的Car数组的Car对象的totoalPrice属性值
 
 
 ```objc
@@ -425,7 +425,7 @@ static void *Person_fullname_KVOContext = &Person_fullname_KVOContext;
 
 从输出结果来看，totoalPrice是一直累加的，因为Car对象个数一直在累加。
 
-####小结下，KVO数组的几个核心点:
+### 小结下，KVO数组的几个核心点:
 
 - 最好是对外提供NSArray（不可变copy版本），对内提供NSMutableArray（可变真实数据list）
 - 对外提供 addCar: 、removeCar: 这样的api来操作对内的NSMutableArray
@@ -433,7 +433,7 @@ static void *Person_fullname_KVOContext = &Person_fullname_KVOContext;
 	- 这样才会触发数组属性修改的KVO通知，才会走KVO回调函数
 - 结合KVC直接获取数组内部子元素的属性值
 
-####从上面的例子中我发现一个我之前理解`错误`的问题: KVO是异步执行的
+### 从上面的例子中我发现一个我之前理解`错误`的问题: KVO是异步执行的
 
 ```objc
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -460,11 +460,11 @@ static void *Person_fullname_KVOContext = &Person_fullname_KVOContext;
 
 ****
 
-###KVO Compliance（兼容）
+## KVO Compliance（兼容）
 
 https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueObserving/Articles/KVOCompliance.html#//apple_ref/doc/uid/20002178-BAJEAIEE
 
-####iOS提供了两种发送属性修改后的KVO通知:
+### iOS提供了两种发送属性修改后的KVO通知:
 
 > 自动发送通知
 
@@ -544,7 +544,7 @@ https://developer.apple.com/library/mac/documentation/Cocoa/Conceptual/KeyValueO
 
 ****
 
-###Key-Value Observing Implementation Details
+## Key-Value Observing Implementation Details
 
 最后就是稍微看下KVO的具体实现吧...
 
@@ -559,7 +559,7 @@ You should never rely on the isa pointer to determine class membership. Instead,
 
 前面已经贴过了就不解释了...
 
-####测试下一个对象添加观察者之后，这个对象的isa指针会指向的还是原来的NSObject类型吗?
+### 测试下一个对象添加观察者之后，这个对象的isa指针会指向的还是原来的NSObject类型吗?
 
 ```objc
 - (void)viewDidLoad {
@@ -619,7 +619,7 @@ You should never rely on the isa pointer to determine class membership. Instead,
 
 OK，一个个来看.
 
-####一旦一个对象添加KVO属性观察者之后，该对象的isa之前指向的原始类会被替换掉，并且替换成一个 `NSKVONotifying_原始类名`这样的一个中间类
+### 一旦一个对象添加KVO属性观察者之后，该对象的isa之前指向的原始类会被替换掉，并且替换成一个 `NSKVONotifying_原始类名`这样的一个中间类
 
 - 当一个对象添加KVO观察者，isa指针就会指向一个新的类`NSKVONotifying_原始类名`
 
@@ -689,7 +689,7 @@ void ReportFunction(id self, SEL _cmd)
 @end
 ```
 
-####总而言之运行时给被观察的对象创建了一个`中间类`出来，并且这个中间类是Cat（被观察对象isa指向的原始类）的一个`子类`.
+### 总而言之运行时给被观察的对象创建了一个`中间类`出来，并且这个中间类是Cat（被观察对象isa指向的原始类）的一个`子类`.
 
 证明如下代码示例:
 
@@ -826,7 +826,7 @@ void ReportFunction(id self, SEL _cmd)
 
 只是一个简单的思路体现，我想并没有这么简单，就找到原始Cat对象的观察者对象我也不太清楚，也懒得看了。那么到此为止，这个中间类所要完成的事情，大概都清楚了...
 
-####最后一个问题: `[被观察对象 class]`一直没有变化，只有`object_getClass(被观察对象)`发生变化
+### 最后一个问题: `[被观察对象 class]`一直没有变化，只有`object_getClass(被观察对象)`发生变化
 
 看下两种获取Class的代码是否有不同
 
@@ -858,7 +858,7 @@ Class object_getClass(id obj)
 
 ****
 
-###最后对KVO的大致实现做个最终总结:
+## 最后对KVO的大致实现做个最终总结:
 
 - 第一步、当一个对象的属性添加了属性观察者之后，这个`对象的 isa指针`会被修改
 	- 注意: 是这个`对象`的isa指针，而不是这个对象`所属类`的isa指针
@@ -894,7 +894,7 @@ Class object_getClass(id obj)
 
 ***
 
-###在记录个lldb调试时打印一个被观察的对象的观察者信息
+## 在记录个lldb调试时打印一个被观察的对象的观察者信息
 
 ```
 po [observedObject observationInfo]
@@ -904,7 +904,7 @@ po [observedObject observationInfo]
 
 ***
 
-###学习资源
+### 学习资源
 
 ```
 http://www.cocoachina.com/ios/20150313/11321.html

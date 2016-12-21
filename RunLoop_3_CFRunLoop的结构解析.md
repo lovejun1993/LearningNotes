@@ -1,4 +1,4 @@
-##App进程启动后，查看主线程的RunLoop对象
+## App进程启动后，查看主线程的RunLoop对象
 
 ```objc
 @implementation AppDelegate
@@ -315,7 +315,7 @@ timers = (null),
 - (3) 用于界面更新 `_ZN2CA11Transaction17observer_callbackEP19__CFRunLoopObservermPv`，这个函数里会遍历所有待处理的 UIView/CAlayer 以执行实际的绘制和调整，并更新 UI 界面
 ```
 
-##kCFRunLoopCommonModes并不是一个RunLoopMode，其实是一个类似NSSet的容器对象
+## kCFRunLoopCommonModes并不是一个RunLoopMode，其实是一个类似NSSet的容器对象
 
 ### commom modes 可以看做是一个set集合，我们可以将其他的RunLoopMode实例 添加到 这个set集合中
 
@@ -333,7 +333,7 @@ NSTimer *timer = .....;
 
 后面会说的RunLoop有几种运行模式，处于某一种模式时，就只会去处理`当前这个模式`下的 sources/observers/timers事件。
 
-###最简单的一个问题就是，NSTimer在发生UI事件的时候，可能会暂时停止执行，那么调度NSTimer的代码，就是使用的上面的(1)中的代码，将NSTimer添加到RunLoop。
+### 最简单的一个问题就是，NSTimer在发生UI事件的时候，可能会暂时停止执行，那么调度NSTimer的代码，就是使用的上面的(1)中的代码，将NSTimer添加到RunLoop。
 
 ```objc
 //1. 
@@ -349,7 +349,7 @@ NSTimer *timer = .....;
 
 这样的Timer就会在common modes这个set集合中所有的mode模式下时，都回去处理这个Timer时间。
 
-###默认的common modes这个set集合中，默认包含`UITrackingRunLoopMode`和`kCFRunLoopDefaultMode`这两个mode模式
+### 默认的common modes这个set集合中，默认包含`UITrackingRunLoopMode`和`kCFRunLoopDefaultMode`这两个mode模式
 
 而RunLoop大部分时间都处于`kCFRunLoopDefaultMode`，只有发生UI事件时才会处于`UITrackingRunLoopMode`，还有几种都是内部私有mode，我们也使用不了。
 
@@ -362,12 +362,12 @@ runloop common modes 并不是一个模式，而是一个`__CFRunLoopMode`实例
 
 - (2) 去`kCFRunLoopCommonModes`这个Set容器保存的`所有的__CFRunLoopMode实例`的timers/observers/sources 
 
-###如果将一个事件源（NSTimer/Observer/Source）添加到runloop了，但是没有执行，可能的原因:
+### 如果将一个事件源（NSTimer/Observer/Source）添加到runloop了，但是没有执行，可能的原因:
 
 - 原因一、检查线程是否start、检查runloop是否正常运行
 - 原因二、事件源添加到runloop时，指定的mode是不是错误
 
-###RunLoopMode、RunLoop存在几种不同的状态mode ，而不同的mode下只接收处理对应的mode类型的事件源
+### RunLoopMode、RunLoop存在几种不同的状态mode ，而不同的mode下只接收处理对应的mode类型的事件源
 
 会根据不同的mode进行`事件过滤`，只去处理这个mode下的 sources/timers/observers。
 
@@ -395,7 +395,7 @@ runloop common modes 并不是一个模式，而是一个`__CFRunLoopMode`实例
 	```
 
 
-##RunLoop有CoreFoundation与CoacaFoundation两个平台的实现版本
+## RunLoop有CoreFoundation与CoacaFoundation两个平台的实现版本
 
 - CFRunLoopRef
 	- 由CoreFoundation类库提供，提供的全部都是纯C语言的Api
@@ -414,7 +414,7 @@ http://opensource.apple.com/source/CF/CF-855.17/CFRunLoop.h
 
 由于CF版本是开源的，所以学习时候大部分都是使用CF版本的代码，下面就去苹果的CF版本的RunLoop实现中去学习下吧.
 
-##CoreFoundation中关于RunLoop体系结构中主要的几个组件
+## CoreFoundation中关于RunLoop体系结构中主要的几个组件
 
 ```
 - (1) RunLoop本身的抽象 >>>> CFRunLoopRef
@@ -498,9 +498,9 @@ GSEventReceiveRunLoopMode（内部私有mode，无法使用）
 
 - (4) 当RunLoop切换到某一个mode模式下时，暂时只会处理该mode模式下的 timers/observers/sources，一直到事件处理完毕切换到其他的mode模式下
 
-##CFRunLoopRef、封装了事件循环的处理功能
+## CFRunLoopRef、封装了事件循环的处理功能
 
-###CoreFoundation中的代码结构定义:
+### CoreFoundation中的代码结构定义:
 
 ```objc
 typedef struct CF_BRIDGED_MUTABLE_TYPE(id) __CFRunLoop * CFRunLoopRef
@@ -544,7 +544,7 @@ struct __CFRunLoop {
 };
 ```
 
-###开启当前所在线程的RunLoop
+### 开启当前所在线程的RunLoop
 
 ```c
 void CFRunLoopRun(void) {	/* DOES CALLOUT */
@@ -566,7 +566,7 @@ void CFRunLoopRun(void) {	/* DOES CALLOUT */
 	- `result == kCFRunLoopRunFinished`
 
 
-###但是我就有一个疑问，这样一个死循环会不会导致线程的卡顿了？
+### 但是我就有一个疑问，这样一个死循环会不会导致线程的卡顿了？
 
 从前面一片文章中，一个全局dic保存thread与runloop之间的关系可以得到:
 
@@ -610,7 +610,7 @@ static Boolean __CFRunLoopModeIsEmpty(CFRunLoopRef rl, CFRunLoopModeRef rlm, CFR
 这三个集合对象都没有item子对象时，这个RunLoop对象就会退出执行。
 
 
-##CFRunLoopModeRef
+## CFRunLoopModeRef
 
 首先看下这个mode的c结构体定义
 
@@ -667,7 +667,7 @@ struct __CFRunLoopMode {
 	- `_observers`
 	- `_timers`
 
-###开发者没有办法直接去操作`__CFRunLoopMode`对象
+### 开发者没有办法直接去操作`__CFRunLoopMode`对象
 
 只有通过这些`kCFRunLoopDefaultMode`、`UITrackingRunLoopMode`、`kCFRunLoopCommonModes`等等标示去间接操作RunLoop对象内部的`__CFRunLoopMode`对象.
 
@@ -676,7 +676,7 @@ struct __CFRunLoopMode {
 当发生UI操作时，也就是主线程RunLoop对象接收到一个UI事件，接着就会将这个timer事件加入到runloop对象的`UITrackingRunLoopMode`对应的`__CFRunLoopMode`对象中`_timers`数组内的timer对象。
 
 
-##CFRunLoopSourceRef
+## CFRunLoopSourceRef
 
 描述一个注册到runloop接收的事件源
 
@@ -684,7 +684,7 @@ struct __CFRunLoopMode {
 typedef struct CF_BRIDGED_MUTABLE_TYPE(id) __CFRunLoopSource * CFRunLoopSourceRef;
 ```
 
-###runloop source结构体定义如下:
+### runloop source结构体定义如下:
 
 ```c
 struct __CFRunLoopSource {
@@ -704,7 +704,7 @@ struct __CFRunLoopSource {
 };
 ```
 
-###version0事件Context结构体定义
+### version0事件Context结构体定义
 
 ```c
 typedef struct {
@@ -722,7 +722,7 @@ typedef struct {
 ```
 
 
-###version1事件Context结构体定义
+### version1事件Context结构体定义
 
 ```c
 typedef struct {
@@ -748,7 +748,7 @@ typedef struct {
 ```
 
 
-###对比CFRunLoopSourceContext与CFRunLoopSourceContext1最大的区别: `mach_port_t`
+### 对比CFRunLoopSourceContext与CFRunLoopSourceContext1最大的区别: `mach_port_t`
 
 - (1) source1类型事件:
 
@@ -776,7 +776,7 @@ typedef struct {
 ```
 
 
-##CFRunLoopObserverRef
+## CFRunLoopObserverRef
 
 每当runloop状态改变的时候，通知observer回调执行处理点什么。
 
@@ -807,7 +807,7 @@ struct __CFRunLoopObserver {
 };
 ```
 
-###对于runloop具备如下变化状态
+### 对于runloop具备如下变化状态
 
 ```c
 typedef CF_OPTIONS(CFOptionFlags, CFRunLoopActivity) {
@@ -864,7 +864,7 @@ RunLoop对象退出执行的情况:
 ```
 
 
-##CFRunLoopTimerRef
+## CFRunLoopTimerRef
 
 就是经常使用的NSTimer
 
@@ -899,7 +899,7 @@ struct __CFRunLoopTimer {
 ```
 
 
-##代码参考资源
+## 代码参考资源
 
 ```
 https://github.com/opensource-apple/CF
