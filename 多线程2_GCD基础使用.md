@@ -309,6 +309,47 @@ dispatch_sync(queue, ^{
 ![](http://a2.qpic.cn/psb?/V11ePBui3l2qGa/mfvtHS8pFneveCrP28kf30LnTHHACBf.FI0Q37nPRXw!/b/dHgBAAAAAAAA&bo=sQKAAhsD4gIFCOI!&rf=viewer_4)
 
 
+## dispatch once来让一段代码只执行一次
+
+```
++ (instancetype)person {
+
+    static Person *p = nil;
+    static dispatch_once_t onceToken;
+    
+//此处打一个断点    
+    
+    dispatch_once(&onceToken, ^{
+        p = [[Person alloc] init];
+    });
+    
+//此处打一个断点   
+    
+    return p;
+}
+```
+
+在第一个断点的，我们输出下 onceToken
+
+```
+(dispatch_once_t) onceToken = 0
+```
+
+再跳到第二个断点，继续输出下 onceToken
+
+```
+(dispatch_once_t) onceToken = -1
+```
+
+发现onceToken变成一个`-1`了.
+
+大概知道了让代码执行一次的道理了:
+
+- 代码没有执行之前，将标志位置为 0
+- 代码第一次执行之后，就将标志位改为 -1
+- 每次执行到`dispatch_once()`代码块时，判断标志位如果是`0`就执行Block，如果是`-1`就不执行Block
+- 而改变这个`onceToken`值的代码，肯定是做了多线程同步处理的
+
 ## `dispatch_after` 在给定的线程队列中，延迟执行block
 
 ```
@@ -325,6 +366,30 @@ dispatch_after(popTime, dispatch_get_main_queue(), ^(void){
 ```
 
 注意，使用`dispatch_after`延迟执行的代码块是`不能取消执行`的。
+
+
+## iOS8之后提交到gcd队列中的block也可`取消`了
+
+```c
+dispatch_queue_t queue = dispatch_queue_create("queue", DISPATCH_QUEUE_SERIAL);
+
+//注意，一定要保存这个Block任务，后续才能取消
+dispatch_block_t block1 = dispatch_block_create(0, ^{
+    NSLog(@"block1 begin");
+    [NSThread sleepForTimeInterval:1];
+    NSLog(@"block1 done");
+});
+
+dispatch_block_t block2 = dispatch_block_create(0, ^{
+    NSLog(@"block2 ");
+});
+
+dispatch_async(queue, block1);
+dispatch_async(queue, block2);
+
+//取消执行
+dispatch_block_cancel(block2);
+```
 
 
 ## `dispatch_group_t`，将一个队列上的`多个block任务`组合起来，可以方便设置所有任务完成时候的回调.
@@ -633,3 +698,125 @@ dispatch_queue_attr_t queue_attr = dispatch_queue_attr_make_with_qos_class (DISP
 dispatch_queue_t queue = dispatch_queue_create("queue", queue_attr);
 ```
 
+
+## `dispatch_barrier_async`来同步等待`concurrent queue`中的一个队列中的block执行
+
+```objc
+@implementation ViewController
+
+- (void)thread1 {
+    
+    dispatch_queue_t concurrentDiapatchQueue=dispatch_queue_create("com.test.queue", DISPATCH_QUEUE_CONCURRENT);
+	
+	//1. 并发无序的任务
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"1 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"2 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"3 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"4 - thread: %@", [NSThread currentThread]);});
+	
+	//2. 需要按照循序执行任务
+    dispatch_barrier_async(concurrentDiapatchQueue, ^{
+        sleep(5); NSLog(@"停止5秒我是同步执行 - thread: %@", [NSThread currentThread]);
+    });
+	
+	//3. 并发无序的任务
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"6 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"7 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"8 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"9 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"10 - thread: %@", [NSThread currentThread]);});
+}
+
+@end
+```
+
+输出信息
+
+```
+2016-06-28 23:31:33.085 Demos[1696:24860] 2 - thread: <NSThread: 0x7ff6f2406d80>{number = 8, name = (null)}
+2016-06-28 23:31:33.085 Demos[1696:25426] 1 - thread: <NSThread: 0x7ff6f2605820>{number = 11, name = (null)}
+2016-06-28 23:31:33.085 Demos[1696:24859] 4 - thread: <NSThread: 0x7ff6f253cce0>{number = 7, name = (null)}
+2016-06-28 23:31:33.085 Demos[1696:24935] 3 - thread: <NSThread: 0x7ff6f26012b0>{number = 10, name = (null)}
+2016-06-28 23:31:38.089 Demos[1696:24935] 停止5秒我是同步执行 - thread: <NSThread: 0x7ff6f26012b0>{number = 10, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:24859] 7 - thread: <NSThread: 0x7ff6f253cce0>{number = 7, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:24935] 6 - thread: <NSThread: 0x7ff6f26012b0>{number = 10, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:25426] 8 - thread: <NSThread: 0x7ff6f2605820>{number = 11, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:24860] 9 - thread: <NSThread: 0x7ff6f2406d80>{number = 8, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:26066] 10 - thread: <NSThread: 0x7ff6f2505f20>{number = 12, name = (null)}
+```
+
+可以看到会让这个`concurrent queue`对应的后面所有的block线程任务挂起，必须等待`dispatch_barrier_async()`分配的block执行完毕之后，才会继续执行`concurrent queue`对应后面入队的block线程任务。
+
+
+## `dispatch_async_f` 完成对`C方法`的异步调用
+
+
+```c
+static void *MyContext = &MyContext;
+```
+
+```c
+-(void)doDispatchAsyncF
+{
+    
+    //1. 线程队列
+    dispatch_queue_t queue=dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+    
+    //2. 异步调用c方法
+    dispatch_async_f(queue, &MyContext, logNum);
+    
+    NSLog(@"-------doDispatchAsyncF------");
+}
+```
+
+```c
+void logNum()
+{
+    NSLog(@"------logNum------");
+}
+```
+
+## `dispatch_suspend/dispatch_resume` 挂起/恢复一个队列进行block调度
+
+```objc
+- (void)thread5 {
+    
+    dispatch_queue_t concurrentDiapatchQueue=dispatch_queue_create("com.test.queue", DISPATCH_QUEUE_CONCURRENT);
+    
+    dispatch_async(concurrentDiapatchQueue, ^{
+        
+        for (int i=1; i<11; i++)
+        {
+            NSLog(@"%d - thread: %@", i, [NSThread currentThread]);
+            
+            //i = 3, 6, 9 时，先暂停队列后休眠3秒，然后恢复队列执行
+            if (i % 3 == 0)
+            {
+                dispatch_suspend(concurrentDiapatchQueue);
+                
+                sleep(3);
+                
+                dispatch_resume(concurrentDiapatchQueue);
+            }
+        }
+    });
+}
+```
+
+输出信息
+
+```
+2016-06-28 23:58:52.599 Demos[3496:58977] 1 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:52.600 Demos[3496:58977] 2 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:52.600 Demos[3496:58977] 3 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:55.606 Demos[3496:58977] 4 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:55.606 Demos[3496:58977] 5 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:55.607 Demos[3496:58977] 6 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:58.612 Demos[3496:58977] 7 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:58.613 Demos[3496:58977] 8 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:58:58.613 Demos[3496:58977] 9 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+2016-06-28 23:59:01.618 Demos[3496:58977] 10 - thread: <NSThread: 0x7fadebf128b0>{number = 2, name = (null)}
+```
+
+
+注意:  对于`全局并发队列`来执行 `dispatch_suspend(), dispatch_resume(), dispatch_set_context()` 这三种操作是没有任何效果的。
