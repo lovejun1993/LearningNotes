@@ -777,7 +777,7 @@ args[4] = 4
 
 哈哈，懂main()中参数就是执行最终生成的二进制文件时，外界传入的参数.
 
-##参数长度不固定 >>> va_list
+## 参数长度不固定 >>> va_list
 
 ```
 #include <stdarg.h>
@@ -803,14 +803,6 @@ main()测试代码
 printf("sum = %d\n", sum(5, 4, 5, 6, 10, 1));
 ```
 
-- va_arg(ap , type)中的type绝对不能为以下类型:
-
-```
-——char、signed char、unsigned char
-——short、unsigned short
-——signed short、short int、signed short int、unsigned short int
-——float
-```
 
 ##指针的指针 (类型 **p;) 通常用于回传一个内部创建的实例
 
@@ -973,7 +965,7 @@ void test() {
 }
 ```
 
-##struct结构体之、基础使用
+## struct结构体之、基础使用、数组使用
 
 测试struct
 
@@ -987,7 +979,7 @@ typedef struct Stu{
 }Stu;
 ```
 
-栈实例
+### 栈实例基础使用
 
 ```c
 //1. 
@@ -998,85 +990,151 @@ Stu stu1 = {.name = "haha1", .num = 19, .age = 19, .group = 'M', .score = 99.1};
 
 //3. 顺序初始化成员变量
 Stu stu2 = {"haha1", 19, 19, 'M', 99.1};
+```
 
-//3. 初始化一个栈结构体数组
+### 栈实例结构体数组
+
+```c
+//4. 初始化一个栈结构体数组
 Stu arr1[] = {
     {"haha1", 19, 19, 'M', 99.1},
-    {"haha2", 20, 19, 'M', 99.1},
-    {"haha3", 21, 19, 'M', 99.1},
-    {"haha4", 22, 19, 'M', 99.1},
-    {"haha5", 23, 19, 'M', 99.1},
+    {"haha2", 20, 19, 'M', 99.2},
+    {"haha3", 21, 19, 'M', 99.3},
+    {"haha4", 22, 19, 'M', 99.4},
+    {"haha5", 23, 19, 'M', 99.5},
 };
-
-//4. 初始化一个栈结构体数组
+    
+//5. 初始化一个栈结构体数组
 Stu *arr2 = (Stu[]){
     {"haha1", 19, 19, 'M', 99.1},
-    {"haha2", 20, 19, 'M', 99.1},
-    {"haha3", 21, 19, 'M', 99.1},
-    {"haha4", 22, 19, 'M', 99.1},
-    {"haha5", 23, 19, 'M', 99.1},
+    {"haha2", 20, 19, 'M', 99.2},
+    {"haha3", 21, 19, 'M', 99.3},
+    {"haha4", 22, 19, 'M', 99.4},
+    {"haha5", 23, 19, 'M', 99.5},
 };
-  
-//5. 静态数组元素是struct栈实例  >>> item是 `值`
+    
+//6. 静态数组元素是struct栈实例  >>> item是 `值`
 static Stu arr3[] = {
     {"haha1", 19, 19, 'M', 99.1},
-    {"haha2", 20, 19, 'M', 99.1},
-    {"haha3", 21, 19, 'M', 99.1},
-    {"haha4", 22, 19, 'M', 99.1},
-    {"haha5", 23, 19, 'M', 99.1},
+    {"haha2", 20, 19, 'M', 99.2},
+    {"haha3", 21, 19, 'M', 99.3},
+    {"haha4", 22, 19, 'M', 99.4},
+    {"haha5", 23, 19, 'M', 99.5},
 };
-
+    
+//7. 静态数组元素是struct栈实例  >>> item是 `值`
 static Stu *arr4 = NULL;
 arr4 = (Stu[]){
     {"haha1", 19, 19, 'M', 99.1},
-    {"haha2", 20, 19, 'M', 99.1},
-    {"haha3", 21, 19, 'M', 99.1},
-    {"haha4", 22, 19, 'M', 99.1},
-    {"haha5", 23, 19, 'M', 99.1},
+    {"haha2", 20, 19, 'M', 99.2},
+    {"haha3", 21, 19, 'M', 99.3},
+    {"haha4", 22, 19, 'M', 99.4},
+    {"haha5", 23, 19, 'M', 99.5},
 };
-  
-//6. 静态数组元素是堆实例的指针 >>> item是 `指针`
-Stu *s1 = malloc(sizeof(Stu));
-s1->name = "hahah6";
-s1->num = 24;
+    
+//8.【常用】 静态数组元素是堆实例的指针 >>> item是 `地址`
 static Stu *arr5[5] = {0};
-arr5[0] = s1;
-arr5[1] = s1;
-arr5[2] = s1;
-arr5[3] = s1;
-arr5[4] = s1;
+for (int i = 0; i < 5; i++) {
+    Stu *stu = malloc(sizeof(Stu));
+    stu->name = "hahah6";
+    stu->num = i + 1;
+    stu->age = i + 1;
+    arr5[i] = stu;
+}
+for (int i = 0; i < 5; i++) {
+    Stu *stu = arr5[i];
+    printf("age = %d\n", stu->age);
+}
+
+//9. 【注意】static是全局始终存在的内存，所以是不能够被回收的
+free(arr5);//运行后程序会崩溃到此行代码
 ```    
 
-堆实例
+### 堆实例结构体数组
 
 ```c
-//1. 
-struct Student **arr5 = malloc(sizeof(struct Student) * 5);
-arr5[0] = s3;
-arr5[1] = s3;
-arr5[2] = s3;
-arr5[3] = s3;
-arr5[4] = s3;
+void test2() {
+    
+    //1. 动态分配数组内存
+    struct Stu **arr6 = malloc(sizeof(struct Stu) * 5);
+    for (int i = 0; i < 5; i++) {
+        Stu *stu = malloc(sizeof(Stu));
+        stu->name = "hahah6";
+        stu->num = i + 1;
+        stu->age = i + 1;
+        arr6[i] = stu;
+    }
+    
+    //2. 动态分配数组内存
+    Stu **arr7 = calloc(5, sizeof(Stu));
+    for (int i = 0; i < 5; i++) {
+        Stu *stu = malloc(sizeof(Stu));
+        stu->name = "hahah6";
+        stu->num = i + 1;
+        stu->age = i + 1;
+        arr7[i] = stu;
+    }
+    
+    //3. static数组
+    static Stu *arr8[] = {0};
+    for (int i = 0; i < 5; i++) {
+        Stu *stu = malloc(sizeof(Stu));
+        stu->name = "hahah6";
+        stu->num = i + 1;
+        stu->age = i + 1;
+        arr8[i] = stu;
+    }
 
-//2.
-Stu *arr7[] = {0};
-arr7[0] = s1;
-arr7[1] = s1;
-arr7[2] = s1;
-arr7[3] = s1;
-arr7[4] = s1;
+    //4. 测试
+    for (int i = 0; i < 5; i++) {
+        Stu *stu = arr6[i];
+        printf("age = %d\n", stu->age);
+    }
+    printf("\n");
+    
+    for (int i = 0; i < 5; i++) {
+        Stu *stu = arr7[i];
+        printf("age = %d\n", stu->age);
+    }
+    printf("\n");
+    
+    for (int i = 0; i < 5; i++) {
+        Stu *stu = arr8[i];
+        printf("age = %d\n", stu->age);
+    }
+    
+    //5. 【重要】清除内存
+    free(arr6); arr6 = NULL;
+    free(arr7); arr7 = NULL;
+}
+```
 
-//3. 
-Stu **arr8 = calloc(5, sizeof(Stu));
-arr8[0] = s1;
-arr8[1] = s1;
-arr8[2] = s1;
-arr8[3] = s1;
-arr8[4] = s1;
+输出
+
+```
+age = 1
+age = 2
+age = 3
+age = 4
+age = 5
+
+age = 1
+age = 2
+age = 3
+age = 4
+age = 5
+
+age = 1
+age = 2
+age = 3
+age = 4
+age = 5
+
+Program ended with exit code: 0
 ```
 
 
-##struct结构体之、Context类型的作用
+## struct结构体之、Context类型的作用
 
 - 第一种、方法的参数可能很多，不太好在c方法中全部写下
 - 第二种、方法需要返回很多个返回值，一个一个使用指针显的不太方便
@@ -1119,7 +1177,7 @@ void XJ_CTRunContextWithUIKitPoint(CTFrameRef ctFrame, CGPoint point, CGRect gra
 }
 ```
 
-##struct结构体之、位段结构体
+## struct结构体之、位段结构体
 
 > 位段结构体常用于OC中判断是否实现了声明的Delegate中的协议方法时
 
@@ -1184,7 +1242,7 @@ struct __touchDelegate {
 
 而后面调用delegate对应的方法时，根据上面的位段结构体实例的对应数据项进行回调协议方法.
 
-##动态内存管理
+## 动态内存管理
 
 malloc()、calloc() 分配内存
 
@@ -1723,7 +1781,7 @@ int main()
 }
 ```
 
-##类的定义模板
+## 类的定义模板
 
 ```c
 class Student {
@@ -1767,7 +1825,7 @@ void Student::test2() {
 那么也就是说C++中的struct基本上能完成class能完成的所有事情，那么最根本的区别是 >>> `默认的访问控制: struct是public的，class是private的`.
 
 
-###所以Class与Struct最大的区别就是实例变量的访问权限:
+### 所以Class与Struct最大的区别就是实例变量的访问权限:
 
 - struct作为`数据结构`的实现体，它默认的数据访问控制是`public`的.
 - class作为`对象`的实现体，它默认的成员变量访问控制是`private`的
@@ -1962,7 +2020,7 @@ int main() {
 }
 ```
 
-##与static结合的成员变量和成员函数不再属于对象的了，而是属于`类`
+## 与static结合的成员变量和成员函数不再属于对象的了，而是属于`类`
 
 > 静态成员变量属于类而不属于任何一个对象，如此一来可以实现多个对象之间的数据共享功能.
 
@@ -2003,7 +2061,7 @@ int main()
 2 2 2 2
 ```
 
-##继承、子类覆盖父类的成员函数时（构造函数继承）
+## c++中的继承、子类覆盖父类的成员函数时（构造函数继承）
 
 ```c
 class Man {

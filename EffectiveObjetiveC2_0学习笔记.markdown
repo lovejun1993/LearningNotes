@@ -692,7 +692,7 @@ typedef NS_ENUM(NSInteger, RespStatus) {
 };
 ```
 
-###`NS_OPTIONS(){...}` >>> 适用于同时存在`多种类型`，而且每一种类型又可以有多种状态，并且任意类型的不同状态之间还可以相互组合
+### `NS_OPTIONS(){...}` >>> 适用于同时存在`多种类型`，而且每一种类型又可以有多种状态，并且任意类型的不同状态之间还可以相互组合
 
 比如，在UIView布局方法autoresizingMask中就有`位移枚举`的使用
 
@@ -789,7 +789,7 @@ UIViewAutoresizingFlexibleWidth占用左移一个的二进制位，后面的分�
 如上是`一种类型`下有不同的状态，不同的状态之间可以相互组合。但是有时候有可能需要`不同类型`的枚举，就需要使用到Mask掩码了。
 
 
-###截取自YYModel中定义的位移枚举来解析Class所有数据结构时使用，使用到了`Mask掩码`。这种情况适用于:
+### 截取自YYModel中定义的位移枚举来解析Class所有数据结构时使用，使用到了`Mask掩码`。这种情况适用于:
 
 - (1) 枚举有不同的类型，每一种类型占用固定的二进制位，并使用一个唯一的Mask掩码来获取
 	- 1 ~ 8 位，Mask掩码: `0xFF`（十六进制，一位代表4个二进制位）
@@ -1112,7 +1112,7 @@ Father *f = [Father new];
 | 直接父类 的实例变量 |
 | 当前类对象 的实例变量 |
 
-###Objective-C对象中所有的实例变量的内存布局规则:
+### Objective-C对象中所有的实例变量的内存布局规则:
 
 - (1) 如上写法定义的实例变量的`地址布局`，在程序代码`编译期间`就已经确定了。那么如果运行时去修改这个布局，就会导致Ivar地址错乱，出现存取数据错误。
 
@@ -2017,7 +2017,7 @@ __unsafe_unretaind
 @end
 ```
 
-##对象内部进行属性变读取时，尽量使用 `_varibale` 直接操作实例变量
+## 对象内部进行属性变读取时，尽量使用 `_varibale` 直接操作实例变量
 
 对于实例变量访问方式有如下两种：
 
@@ -10153,7 +10153,7 @@ OBJC_EXPORT id _objc_msgForward(id receiver, SEL sel, ...) {
 	- 因为在这个阶段，可以拿到: target、sel、方法执行所需要的所有的参数
 
 
-##Cache缓存代码模板
+## Cache缓存代码模板
 
 ```objc
 @interface ClassMapper : NSObject
@@ -10199,7 +10199,7 @@ OBJC_EXPORT id _objc_msgForward(id receiver, SEL sel, ...) {
 @end
 ```
 
-##Category 
+## Category不会覆盖原始方法实现，以及多个Category重写相同的方法实现的调用顺序
 
 主要涉及的问题
 
@@ -10686,12 +10686,12 @@ ViewController测试类
 
 同样是Category在编译路径出现的越后面，其Method就会排在`method_list`的第一个。
 
-###最后小结下:
+### 小结:
 
 - (1) Category中重写原始类中已经存在的方法实现时
 	- Category中重写Method肯定会排在原始类的Method的`前面`
 	- 每当从编译路径中读取到Category重写Method，就会将这个重写的Method采用`头插法`插入到原始类的`method_list`的第一个位置
 	- 也就是说，越在后面编译的Category中重写的Method，却会出现在`method_list`的第一个位置
 	
-- (2) Category中添加原始类中不存在的新方法实现时
-	- 会按照Category在编译路径中的顺序，将Method依次添加到原始类的`method_list`
+- (2) 多个Category中，都重写了相同的方法实现时
+	- 会按照Category在编译路径中的顺序，将Method依次【头插】到原始类的`method_list`

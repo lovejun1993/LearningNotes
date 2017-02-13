@@ -306,7 +306,63 @@ dispatch_sync(queue, ^{
 可以得到，sync调度block时，不管queue是`串行`还是`并行`都是一样的效果。
 
 
+### `dispatch_async`与`dispatch_sync`同时在一个Serial GCD Queue调度
+
+```objc
+@implementation ViewController
+
+- (void)testQeueu {
+    dispatch_queue_t queue = dispatch_queue_create("serial", DISPATCH_QUEUE_SERIAL);
+    
+    dispatch_async(queue, ^{
+        NSLog(@"async task 1 >>> thread: %@", [NSThread currentThread]);
+    });
+    dispatch_async(queue, ^{
+        NSLog(@"async task 2 >>> thread: %@", [NSThread currentThread]);
+    });
+    dispatch_sync(queue, ^{
+        NSLog(@"sync task 3 >>> thread: %@", [NSThread currentThread]);
+    });
+    dispatch_async(queue, ^{
+        NSLog(@"async task 4 >>> thread: %@", [NSThread currentThread]);
+    });
+    dispatch_sync(queue, ^{
+        NSLog(@"sync task 5 >>> thread: %@", [NSThread currentThread]);
+    });
+}
+
+@end
+```
+
+输出结果
+
+```
+2016-12-12 16:16:03.722 XZHRuntimeDemo[19943:1384149] async task 1 >>> thread: <NSThread: 0x61800007e7c0>{number = 4, name = (null)}
+2016-12-12 16:16:03.723 XZHRuntimeDemo[19943:1384149] async task 2 >>> thread: <NSThread: 0x61800007e7c0>{number = 4, name = (null)}
+2016-12-12 16:16:03.723 XZHRuntimeDemo[19943:1376726] sync task 3 >>> thread: <NSThread: 0x60000007e740>{number = 1, name = main}
+2016-12-12 16:16:03.723 XZHRuntimeDemo[19943:1384149] async task 4 >>> thread: <NSThread: 0x61800007e7c0>{number = 4, name = (null)}
+2016-12-12 16:16:03.723 XZHRuntimeDemo[19943:1376726] sync task 5 >>> thread: <NSThread: 0x60000007e740>{number = 1, name = main}
+```
+
+### GCD Queue Async sync 小结
+
 ![](http://a2.qpic.cn/psb?/V11ePBui3l2qGa/mfvtHS8pFneveCrP28kf30LnTHHACBf.FI0Q37nPRXw!/b/dHgBAAAAAAAA&bo=sQKAAhsD4gIFCOI!&rf=viewer_4)
+
+- (1) `dispatch_sync()`在任何对列下都是保持如下
+	- **不创建新的线程**
+	- 在当前`dispatch_sync()`代码所在线程，执行完block，才会让所在线程执行后面的代码
+	- 也就是说会卡主当前`dispatch_sync()`代码所在线程
+
+- (2) `dispatch_async()`需要区分队列情况
+	- Serial Queue
+		- `main queue`，不会再创建线程，而是直接在主线程上等待执行
+		- `自创建 serial queue`
+			- 创建**一个唯一**的线程，一个接着一个调度执行block
+			- 也可以完成`多线程同步`，只不过block都是在另外一个`子线程`上依次按照`顺序`执行
+	- Concurrent Queue
+		- 会创建多个线程，并且会复用这些线程
+		- block会被自动分配到其中的某一个线程上调度执行
+	- 比`dispatch_sync()`多进行block对象的拷贝
 
 
 ## dispatch once来让一段代码只执行一次
@@ -697,7 +753,6 @@ dispatch_queue_attr_t queue_attr = dispatch_queue_attr_make_with_qos_class (DISP
 //2. 创建队列时，传入设置的服务质量
 dispatch_queue_t queue = dispatch_queue_create("queue", queue_attr);
 ```
-
 
 ## `dispatch_barrier_async`来同步等待`concurrent queue`中的一个队列中的block执行
 

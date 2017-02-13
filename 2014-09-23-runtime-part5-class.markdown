@@ -542,3 +542,71 @@ OK，和我们手动创建一个NSObject类文件的效果其实是一样的。
 > 注意，只有通过运行时创建注册的类，才可以添加Ivar。如果是已经存在类文件.h和.m的类，是不能够再添加Ivar的。原因是对象的Ivar实例变量的内存布局是按照顺序一个接着一个排列的，如果运行时修改Ivar布局，就会导致全部的Ivar布局错乱。
 
 
+## 几种respondsToSelector使用
+
+```objc
+@interface Person : NSObject
++ (void)log1;
+- (void)log2;
+- (void)log3;
++ (void)log4;
+@end
+@implementation Person
+- (void)log3 {}
++ (void)log4 {}
+@end
+```
+
+```objc
+- (void)testClassImplMethod {
+    
+/////////////////// via meta class ///////////////////
+    
+    //1. meta class
+    Class metaCls = object_getClass([Person class]);
+    
+    //2. meta class respondsToSelector:
+    BOOL ret1 = NO;
+    if (class_isMetaClass(metaCls)) {
+        ret1 = class_respondsToSelector(metaCls, @selector(log1));
+    }
+
+    BOOL ret2 = NO;
+    if (class_isMetaClass(metaCls)) {
+        ret2 = class_respondsToSelector(metaCls, @selector(log4));
+    }
+    
+    NSLog(@"\n");
+    
+/////////////////// NSObject respondsToSelector ///////////////////
+    
+    BOOL ret3 = [[Person class] instancesRespondToSelector:@selector(log1)];
+    BOOL ret4 = [[Person class] instancesRespondToSelector:@selector(log2)];
+    BOOL ret5 = [[Person class] instancesRespondToSelector:@selector(log3)];
+    BOOL ret6 = [[Person class] instancesRespondToSelector:@selector(log4)];//错误、无法判断类方法实现
+    
+    NSLog(@"\n");
+    
+    BOOL ret7 = [[Person class] respondsToSelector:@selector(log1)];
+    BOOL ret8 = [[Person class] respondsToSelector:@selector(log2)];
+    BOOL ret9 = [[Person class] respondsToSelector:@selector(log3)];//错误、无法判断对象方法实现
+    BOOL ret10 = [[Person class] respondsToSelector:@selector(log4)];
+    
+    NSLog(@"");
+}
+```
+
+```
+(Class) metaCls = 0x0000000101083928
+(BOOL) ret1 = NO
+(BOOL) ret2 = YES
+(BOOL) ret3 = NO
+(BOOL) ret4 = NO
+(BOOL) ret5 = YES
+(BOOL) ret6 = NO
+(BOOL) ret7 = NO
+(BOOL) ret8 = NO
+(BOOL) ret9 = NO
+(BOOL) ret10 = YES
+```
+

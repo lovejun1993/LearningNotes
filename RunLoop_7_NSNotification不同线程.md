@@ -46,7 +46,7 @@
 @end
 ```
 
-运行结果
+运行后点击两次，可以看到有两次dealloc打印如下:
 
 ```
 2014-11-24 14:13:08.690 Demo[901:325600] MyView delloc ===> 0x17019fe40
@@ -88,16 +88,18 @@
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
    
-    //1.
+    //1. 先让对象废弃
     _view = [[MyView alloc] init];
     _view = nil;
     
-    //2.
-    [[NSNotificationCenter defaultCenter] postNotificationName:@"test" object:nil];//崩溃到这一句 >>> EXC_BAD_ACCESS
+    //2. 再发送通知
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"test" object:nil];
 }
 
 @end
 ```
+
+如上代码在iOS9之前的系统，都会`BAD_ACESS`崩溃。但是在iOS9以及之后的系统，都不会有问题。所以，应该是iOS9修复了这个问题吧。
 
 
 ### A线程发送通知，B线程关注通知
@@ -135,7 +137,7 @@
 2014-11-24 12:58:20.133 Demo[819:308826] xxxxxxxxxxxxxxxxxx thread = <NSThread: 0x1740768c0>{number = 2, name = (null)}
 ```
 
-可以看到其实子线程也是可以接收到通知的，那么在dealloc时就需要removeObserver。
+可以看到接收通知处理是处于`子线程`上完成的，那么在dealloc时就需要removeObserver。
 
 - 子线程添加observer，主线程发送notification
 
@@ -170,13 +172,15 @@
 2014-11-24 13:06:19.048 Demo[831:311011] xxxxxxxxxxxxxxxxxx thread = <NSThread: 0x170070840>{number = 1, name = main}
 ```
 
-发现也是可以收到通知的，那么在dealloc时也需要removeObserver。以前我一直认为在A线程发送通知，那么只能在A线程注册通知.....囧。
+可以看到接收通知处理是处于`主线程`，那么在dealloc时也需要removeObserver。
+
+以前我一直认为在A线程发送通知，那么只能在A线程注册通知.....囧。
 
 ### 可以得到如下几点:
 
-- (1) NSNotificationCenter是多线程安全的
-- (2) 和在`哪个线程进行addObserver`没啥关系
-- (3) 主要和`在哪个线程进行post通知`有关系 >>> 在A线程上进行post通知，就会在A线程上进行observer回调
+- (1) NSNotificationCenter是`多线程安全`的
+- (2) 与`哪个线程进行addObserver`没啥关系（只是操作缓存dic对象而已）
+- (3) 与`在哪个线程进行post通知`有关系 >>> 在A线程上进行post通知，就会在A线程上进行observer回调
 
 所以，在哪一个线程上post一个通知，就会在哪一个线程上进行notification的转发，继而转发给observer进行处理。
 

@@ -1,4 +1,4 @@
-##struct实例 持有 Foundation对象，在struct实例废弃时同样让Foundation对象在子线程上异步释放废弃
+## struct实例 持有 Foundation对象，在struct实例废弃时同样让Foundation对象在子线程上异步释放废弃
 
 Foundation 类
 

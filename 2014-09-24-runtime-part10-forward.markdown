@@ -183,7 +183,7 @@ categories:
 
 ```
 	
-```
+```c
 //用来处理 SEL = @"noExistMethod:"的target
 	
 @interface Car : NSObject
@@ -244,7 +244,7 @@ categories:
 
 ####我个人的蠢办法
 
-- 因为类方法的实现，都是存放在Meta类中的，也就是Meta类的objc_class结构体实例中
+- 因为类方法的实现，都是存放在Meta类中的，也就是Meta类的`objc_class`结构体实例中
 
 - 那么是不是就是拿到Meta类来重写forward函数就可以了？
 
@@ -254,7 +254,7 @@ categories:
 
 这仅仅是我个人突发奇想，没有任何的实现根据，觉得好笑也不是特别靠谱...
 
-修正下，可以不用去Meta类对应的Objc_class获取类方法实现，直接可以通过
+修正下，可以不用去Meta类对应的`objc_class`获取类方法实现，直接可以通过
 
 ```objc
 // 获取类方法实现

@@ -7,41 +7,40 @@ categories:
 ---
 
 
-##UI事件传递、`hitTest:withEven:`方法、`pointInside:withEvent:`方法的使用
+## UI事件传递、`hitTest:withEven:`方法、`pointInside:withEvent:`方法的使用
 
-###一个UIView不接收`触摸事件`的几种情况
+### 一个UIView不接收`触摸事件`的几种情况
 
 - (1) view是`不接收用户交互`
 
-```
+```objc
 view.userInteractionEnabled == NO
 ```
 
 - (2) view是`隐藏`
 
-```
+```objc
 view.hidden == YES
 ```
 
 - (3) view是`透明`
 
-```
+```objc
 view.alpha == 0.0 ~ 0.01
 ```
 
-- (4) `superView.frame` 或 `view自己.frame` 为 `CGRectZero`
+- (4) `superView.frame` 或 `自己.frame` 为 `CGRectZero`
 
 ```objc
 superView.frame = CGRectZero或没有设置
 UIView *subView = ...
 [superView addSubview:subView];
-
-superView无法hitTest:，就造成内部的subView也无法hitTest:，即最终无法响应UI事件
 ```
 
-****
+superView无法执行`hitTest:withEvent`，就造成内部的subView也无法执行`hitTest:withEvent`，即最终无法响应UI事件。
 
-###当UIView不满足如上四个条件时，都会接受用户的手势事件、触摸事件，首先会调用如下UIView对象的方法实现
+
+### 当UIView不满足如上四个条件时，都会接受用户的手势事件、触摸事件，首先会调用如下UIView对象的方法实现
 
 ```objc
 @interface GrayView : UIView
@@ -108,9 +107,7 @@ superView无法hitTest:，就造成内部的subView也无法hitTest:，即最终
 
 - (2) `pointInside:withEvent:` >>> 测试触摸事件.point是否在当前view区域内
 
-****
-
-####从网上搜到一份关于`-[UIView hitTest:withEvent:]`的源码大致实现
+## 从网上搜到一份关于`-[UIView hitTest:withEvent:]`的源码大致实现
 
 ```objc
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
@@ -123,7 +120,6 @@ superView无法hitTest:，就造成内部的subView也无法hitTest:，即最终
     
     // 3. 从`上到下`（最上面开始）遍历自己的所有子控件，看是否有子控件更适合响应此事件
     int count = self.subviews.count;
-    
     for (int i = count - 1; i >= 0; i--) {
         UIView *childView = self.subviews[i];
         
@@ -146,7 +142,7 @@ superView无法hitTest:，就造成内部的subView也无法hitTest:，即最终
 
 可以看到这个`hitTest:withEvent:`函数实现，主要就是测试这个UIView对象，到底能不能够处理这个UI触摸事件。
 
-###使用一个例子代码看`hitTest:withEvent:`与`pointInside:withEvent:`怎么使用
+## 使用一个例子代码看`hitTest:withEvent:`与`pointInside:withEvent:`怎么使用
 
 首先写一个BaseView，用来拦截UIView的如上两个方法执行，添加一些log
 
@@ -197,7 +193,7 @@ superView无法hitTest:，就造成内部的subView也无法hitTest:，即最终
 
 然后上面每一种颜色View都是一个自定义UIView子类，内部不需要重写任何的方法，仅仅是建立一个简单的自定义View即可。
 
-###第一种点击情况、WhiteView中间，得到如下输出:
+### 第一种点击情况、WhiteView中间，得到如下输出:
 
 ```
 2016-09-04 23:53:52.044 UICodes[26224:436600] <GrayView: 0x7fb690d20d50; frame = (0 64; 375 667); layer = <CALayer: 0x7fb690d70920>> - hitTest:withEvent: 接收到触摸事件
@@ -243,7 +239,7 @@ WhiteView作为找到的处理者。
 
 后续的输出和前面的是一样的，难道是走了两次事件传递？不太清楚，后面再看吧。
 
-###第二种点击情况、点击WhiteView超出YellowView的区域，得到如下输出:
+### 第二种点击情况、点击WhiteView超出YellowView的区域，得到如下输出:
 
 ```
 2016-09-04 23:55:38.279 UICodes[26224:436600] <GrayView: 0x7fb690d20d50; frame = (0 64; 375 667); layer = <CALayer: 0x7fb690d70920>> - hitTest:withEvent: 接收到触摸事件
@@ -286,7 +282,7 @@ hitTest和pointInside执行过程:
 
 GreenView作为找到的处理者。
 
-###第三种点击情况、点击YellowView中超出WhiteView的区域
+### 第三种点击情况、点击YellowView中超出WhiteView的区域
 
 ```
 2016-09-04 23:58:08.414 UICodes[26224:436600] <GrayView: 0x7fb690d20d50; frame = (0 64; 375 667); layer = <CALayer: 0x7fb690d70920>> - hitTest:withEvent: 接收到触摸事件
@@ -374,7 +370,7 @@ hitTest和pointInside执行过程:
 
 GreenView作为找到的处理者。
 
-###第五种点击情况、点击RedView区域
+### 第五种点击情况、点击RedView区域
 
 ```
 2016-09-05 00:01:46.251 UICodes[26224:436600] <GrayView: 0x7fb690d20d50; frame = (0 64; 375 667); layer = <CALayer: 0x7fb690d70920>> - hitTest:withEvent: 接收到触摸事件
@@ -427,7 +423,7 @@ hitTest和pointInside执行过程:
 RedView作为找到的处理者。
 
 
-###第六种点击情况、点击GrayView
+### 第六种点击情况、点击GrayView
 
 ```
 2016-09-05 00:02:52.549 UICodes[26224:436600] <GrayView: 0x7fb690d20d50; frame = (0 64; 375 667); layer = <CALayer: 0x7fb690d70920>> - hitTest:withEvent: 接收到触摸事件
@@ -479,7 +475,7 @@ hitTest和pointInside执行过程:
 GrayView作为找到的处理者。
 
 
-###下从上述6个触摸事件日志中，小结事件传递的过程:
+### 下从上述6个触摸事件日志中，小结事件传递的过程:
 
 - (1) 都是先从 `super view` 开始，然后传递给所有的`subviews`尝试响应
 
@@ -491,23 +487,23 @@ GrayView作为找到的处理者。
 
 - (4) 最终如果没有找到事件响应者，那么将`root view`比如上面的`GaryView`作为最终的事件响应者
 
-###事件传递的查找结构就类似一个树形结构:
+### 事件传递的查找结构就类似一个树形结构:
 
 - (1) 从`最底层`的`RootView`开始发送`hitTest:withEvent:`消息，依次询问是否能成功响应者
 
-- (2) 但是对于某个View的所有`subviews`的`hitTest:withEvent:`消息询问，却是从`最上面`的到`最下面`的subview依次询问
+- (2) 但是对于某个View的`subviews`的`hitTest:withEvent:`消息询问，却是从`最上面`的到`最下面`的subview依次询问
 
 - (3) 每个能执行`hitTest:withEvent:`方法的view都属于事件传递的一部分，但是只有`pointInside:withEvent:`返回`YES`的view才属于响应者链条
 
-###除了事件传递之外，还有 `事件响应、事件响应链`
+### 除了事件传递之外，还有 `事件响应、事件响应链`
 
 - (1) 事件响应者: 继承UIResponder的对象称之为响应者对象，能够处理touchesBegan等触摸事件。
 
 - (2) 响应者链: 由很多`事件响应者`链接在一起`组合`起来的一个链条称之为响应者链。但是其中有一个View是第一之间响应者，其他的都是备用。
 
-####事件传递是`自底向上`依次询问View对象，那么当找到了事件第一响应者之后，在构成的响应者链条中去处理事件时，却是`自上而下`依次去响应事件
+### 事件传递是`自底向上`依次询问View对象，那么当找到了事件第一响应者之后。在构成的响应者链条中去处理事件时，却是`自上而下`依次去响应事件
 
-```
+```c
 找到的第一响应者View -> super view -> root view -> 控制器view -> 控制器 -> window
 ```
 
@@ -679,13 +675,13 @@ GrayView作为找到的处理者。
 
 - (4) 而作为红色、绿色、黄色的父亲View >>> 黑色View，此时一旦找到黄色View是第一响应者，就直接停止询问了，直接将黄色View作为事件的第一响应者
 
-####关于hitTest和pointInside方法的使用建议
+### 关于hitTest和pointInside方法的使用建议
 
 - (1) 如果是仅仅控制一个View不参与事件传递，及不想成为事件响应者和内部的subviews也不想成为事件响应者。这种情况，只需要重写`-[UIView pointInside:withEvent]`实现返回`NO`即可
 
 - (2) 但是如果需要在某个View中根据情况将事件`传递给另外的View对象`去处理，那么就需要重写`-[UIView hitTest:withEvent:]`方法实现了
 
-####当事件传递结束找到了第一响应者之后，那么事件的响应是自上而下
+### 当事件传递结束找到了第一响应者之后，那么事件的响应是自上而下
 
 ```
 找到的第一响应者View -> super view -> root view -> 控制器view -> 控制器 -> key window
@@ -696,15 +692,13 @@ GrayView作为找到的处理者。
 - (3) 事件响应是从上面的View开始依次询问是否响应
 
 
-之前在Cell上贴一个Button，然后Button事件拦截了Cell事件，这下就很好解决了。
+### 之前在Cell上贴一个Button，然后Button事件拦截了Cell事件，这下就很好解决了。
 
 重写Button的`hitTest:withEvent`返回Cell对象（Button使用weak指针引用cell对象）即可完成。
 
 之前是直接`[tableView didSelectAtIndexPath:]`完成的。
 
-***
-
-###使用Category Associate 扩大UI的事件响应区域
+## 使用Category Associate 扩大UI的事件响应区域
 
 ```objc
 #import <UIKit/UIKit.h>

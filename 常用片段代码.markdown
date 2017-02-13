@@ -1439,7 +1439,7 @@ if ((_menuIconNameArray.count - 1) >= indexPath.row) {
 ((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
 ```
 
-## 后台任务
+## 后台任务 UIBackgroundTaskIdentifier
 
 ```objc
 @implementation FQLNetworkCacheManager {
@@ -1469,23 +1469,138 @@ if ((_menuIconNameArray.count - 1) >= indexPath.row) {
 @end
 ```
 
-## 数据分页逻辑
 
+## text size 计算
+
+```objc
+/**
+ *  计算文字尺寸
+ *  @param text    需要计算尺寸的文字
+ *  @param font    文字的字体
+ *  @param maxSize 文字的最大尺寸
+ */
+- (CGSize)sizeWithText:(NSString *)text font:(UIFont *)font maxSize:(CGSize)maxSize
+ 
+{
+ 
+    NSDictionary *attrs = @{NSFontAttributeName : font};
+ 
+    return [text boundingRectWithSize:maxSize 
+                              options:NSStringDrawingUsesLineFragmentOrigin 
+                           attributes:attrs
+                              context:nil].size;
+ 
+}
 ```
-总记录数：totalRecord
-每页最大记录数：maxResult
+
+## UITextview 动态改变高度
+
+```objc
+@implementation ViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    UITextView * text =[[UITextView alloc]initWithFrame:CGRectMake(0, 100, 200, 20)];
+    [self.view addSubview:text];
+    text.backgroundColor =[UIColor lightGrayColor];
+    
+    // 监听textview的text内容改变
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(ValueChange:)
+                                                 name:UITextViewTextDidChangeNotification
+                                               object:nil];
+}
+
+- (void)ValueChange:(NSNotification *)obj
+{
+    UITextView * textView = obj.object;
+    CGRect rect = textView.frame;
+    rect.size.height = textView.contentSize.height ;
+    textView.frame = rect ;
+}
+```
+
+## 文件最后两次修改之间的时间差
+
+```objc
+NSFileManager *fileManager = [NSFileManager defaultManager];
+
+// get file attribute 
+NSError *attributesRetrievalError = nil;
+NSDictionary *attributes = [fileManager attributesOfItemAtPath:path
+
+                                                     error:&attributesRetrievalError];
+
+if (!attributes) {
+    YTKLog(@"Error get attributes for file at %@: %@", path, attributesRetrievalError);
+    return -1;
+}
+
+//文件修改时间 --> 当前请求发起时间 （判断缓存是否已经超时）
+int seconds = -[[attributes fileModificationDate] timeIntervalSinceNow];
+```
+
+## 两种方法删除NSUserDefaults所有记录
+
+```objc
+//方法一
+NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
+[[NSUserDefaults standardUserDefaults] removePersistentDomainForName:appDomain];
 ```
  
-算法一:
+```objc
+//方法二
+- (void)resetDefaults {
+    NSUserDefaults * defs = [NSUserDefaults standardUserDefaults];
+    NSDictionary * dict = [defs dictionaryRepresentation];
+    for (id key in dict) {
+        [defs removeObjectForKey:key];
+    }
+    [defs synchronize];
+}
+```
+
+## NSURLRequest设置缓存策略
+
+- NSURLCache 仅支持内存缓存，不支持硬盘缓存   
+- 只要设置了缓存策略，系统会自动利用NSURLCache进行数据缓存
+	- 调用 `cachedResponseForRequest:` 方法，查询缓存response数据
+	- 调用 `storeCachedResponse:forRequest:` 方法，存储response数据
+
+NSURLRequestUseProtocolCachePolicy几种缓存策略
+
+
+```
+
+NSURLRequestReloadIgnoringLocalCacheData 		
+NSURLRequestReturnCacheDataElseLoad        
+NSURLRequestReturnCacheDataDontLoad        
+```
 
 ```c
-totalPage = totalRecord % maxResult == 0 ? totalRecord / maxResult : totalRecord / maxResult + 1 ;
-```
- 
-算法二：（推荐）
+typedef NS_ENUM(NSUInteger, NSURLRequestCachePolicy)
+{
+	// 默认的缓存策略（取决于协议）
+    NSURLRequestUseProtocolCachePolicy = 0,
 
-```c
-totalPage = (totalRecord + maxResult -1) / maxResult;
+	// 忽略缓存，请求网络最新数据
+    NSURLRequestReloadIgnoringLocalCacheData = 1,
+    
+    // Unimplemented
+    NSURLRequestReloadIgnoringLocalAndRemoteCacheData = 4, 
+    
+    // 忽略缓存，请求网络最新数据
+    NSURLRequestReloadIgnoringCacheData = NSURLRequestReloadIgnoringLocalCacheData,
+
+	// 有缓存就用缓存，没有缓存就重新请求
+    NSURLRequestReturnCacheDataElseLoad = 2,
+    
+    // 有缓存就用缓存，没有缓存就不发请求，当做请求出错处理（用于离线模式）
+    NSURLRequestReturnCacheDataDontLoad = 3,
+
+	// Unimplemented
+    NSURLRequestReloadRevalidatingCacheData = 5, 
+};
 ```
 
-其中 maxResult  - 1 就是 totalRecord / maxResult 的最大的余数

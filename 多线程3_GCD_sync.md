@@ -744,6 +744,56 @@ void dispatch_barrier_async(dispatch_queue_t queue, dispatch_block_t block);
 
 ![](http://p1.bpimg.com/567571/f6640190b47210e7.jpg)
 
+
+### `dispatch_barrier_async`来同步等待`concurrent queue`中的一个队列中的block执行
+
+```objc
+@implementation ViewController
+
+- (void)thread1 {
+    
+    dispatch_queue_t concurrentDiapatchQueue=dispatch_queue_create("com.test.queue", DISPATCH_QUEUE_CONCURRENT);
+	
+	//1. 并发无序的任务
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"1 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"2 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"3 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"4 - thread: %@", [NSThread currentThread]);});
+	
+	//2. 需要按照循序执行任务
+    dispatch_barrier_async(concurrentDiapatchQueue, ^{
+        sleep(5); NSLog(@"停止5秒我是同步执行 - thread: %@", [NSThread currentThread]);
+    });
+	
+	//3. 并发无序的任务
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"6 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"7 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"8 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"9 - thread: %@", [NSThread currentThread]);});
+    dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"10 - thread: %@", [NSThread currentThread]);});
+}
+
+@end
+```
+
+输出信息
+
+```
+2016-06-28 23:31:33.085 Demos[1696:24860] 2 - thread: <NSThread: 0x7ff6f2406d80>{number = 8, name = (null)}
+2016-06-28 23:31:33.085 Demos[1696:25426] 1 - thread: <NSThread: 0x7ff6f2605820>{number = 11, name = (null)}
+2016-06-28 23:31:33.085 Demos[1696:24859] 4 - thread: <NSThread: 0x7ff6f253cce0>{number = 7, name = (null)}
+2016-06-28 23:31:33.085 Demos[1696:24935] 3 - thread: <NSThread: 0x7ff6f26012b0>{number = 10, name = (null)}
+2016-06-28 23:31:38.089 Demos[1696:24935] 停止5秒我是同步执行 - thread: <NSThread: 0x7ff6f26012b0>{number = 10, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:24859] 7 - thread: <NSThread: 0x7ff6f253cce0>{number = 7, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:24935] 6 - thread: <NSThread: 0x7ff6f26012b0>{number = 10, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:25426] 8 - thread: <NSThread: 0x7ff6f2605820>{number = 11, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:24860] 9 - thread: <NSThread: 0x7ff6f2406d80>{number = 8, name = (null)}
+2016-06-28 23:31:38.090 Demos[1696:26066] 10 - thread: <NSThread: 0x7ff6f2505f20>{number = 12, name = (null)}
+```
+
+可以看到会让这个`concurrent queue`对应的后面所有的block线程任务挂起，必须等待`dispatch_barrier_async()`分配的block执行完毕之后，才会继续执行`concurrent queue`对应后面入队的block线程任务。
+
+
 ### 使用`barrier`对上面的测试有问题的代码进行改造
 
 ```objc

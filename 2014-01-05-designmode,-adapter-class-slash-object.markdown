@@ -21,7 +21,7 @@ categories:
 
 ###先看下 面向`接口` 适配器
 
-####语言能力抽象接口
+#### 语言能力抽象接口
 
 ```objc
 #import <Foundation/Foundation.h>
