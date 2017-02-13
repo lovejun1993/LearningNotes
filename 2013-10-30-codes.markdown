@@ -1468,3 +1468,24 @@ if ((_menuIconNameArray.count - 1) >= indexPath.row) {
 
 @end
 ```
+
+## 数据分页逻辑
+
+```
+总记录数：totalRecord
+每页最大记录数：maxResult
+```
+ 
+算法一:
+
+```c
+totalPage = totalRecord % maxResult == 0 ? totalRecord / maxResult : totalRecord / maxResult + 1 ;
+```
+ 
+算法二：（推荐）
+
+```c
+totalPage = (totalRecord + maxResult -1) / maxResult;
+```
+
+其中 maxResult  - 1 就是 totalRecord / maxResult 的最大的余数
