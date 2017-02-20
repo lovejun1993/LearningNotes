@@ -1,18 +1,20 @@
----
-layout: post
-title: "Codes"
-date: 2013-10-30 00:14:28 +0800
-comments: true
-categories: 
----
+## lldb导入类库
 
-记录下一些小技巧
+```
+expr @import UIKit
+```
 
-###Macdown 表格语法
+## xcode插件目录
+
+```c
+open ~/Library/Application\ Support/Developer/Shared/Xcode/Plug-ins/
+```
+
+## Macdown 常用语法
 
 ```
 | Tables        | Are           | Cool  |
-| ------------- |:-------------:| -----:|
+| :---------: | :---------: | :-----: |
 | col 3 is      | right-aligned | $1600 |
 | col 2 is      | centered      |   $12 |
 | zebra stripes | are neat      |    $1 |
@@ -26,16 +28,124 @@ categories:
 | zebra stripes | are neat      | 
 ```
 
-
-## 响应码大致分类
+## macdown导入本地同级别文件目录下的图片
 
 ```
-1×× 　　保留   
-2×× 　　表示请求成功地接收   
-3×× 　　为完成请求客户需进一步细化请求   
-4×× 　　客户错误   
-5×× 　　服务器错误  
+<img src="./" alt="" title="" width="700"/>
 ```
+
+## `objc_msgSend()` 函数类型转换的格式
+
+```
+((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
+```
+
+小结下c/c++函数指针强转的格式规律：
+
+```c
+#include <iostream>
+using namespace std;
+
+//1. 
+void work(void *self, char *sel) {
+    
+}
+
+//2.
+int work(void *self, char *sel ,int x) {
+    return 1;
+}
+
+//3.
+bool work(void *self, char *sel ,int x, int y) {
+    return true;
+}
+
+//4.
+string work(void *self, char *sel ,int x, int y, int z) {
+        return string("Hello world~!!");
+}
+```
+
+如上4个c++重载函数的函数指针类型如下：
+
+```c
+返回值类型 (*类型名字)(函数的参数列表)
+
+//1. 
+void    (*funcP1)(void *self, char *sel);
+
+//2.
+int     (*funcP2)(void *self, char *sel ,int x);
+
+//3.
+bool    (*funcP3)(void *self, char *sel ,int x, int y);
+
+//4.
+string  (*funcP4)(void *self, char *sel ,int x, int y, int z);
+```
+
+通过一个函数的指针变量，调用指向的函数:
+
+```c
+void test() {
+    
+    void *ptr = NULL;
+    char sel[] = "sel";
+    
+    // (返回值类型 (*)(函数的参数列表)函数指针变量)(传递给方法的形参列表)；
+    
+    //1.
+    ((void (*)(void *, char *))work)(ptr, sel);
+    
+    //2.
+    int ret1 = ((int (*)(void *, char *, int))work)(ptr, sel, 19);
+    
+    //3.
+    bool ret2 = ((bool (*)(void *, char *, int, int))work)(ptr, sel, 19, 20);
+    
+    //4.
+    string ret3 = ((string (*)(void *, char *, int, int, int))work)(ptr, sel, 19, 20, 21);
+    
+}
+```
+
+## 参数长度不固定 >>> `va_list`
+
+```
+#include <stdio.h>
+#include <stdarg.h>
+
+double average(int num,...)
+{
+    
+    va_list valist;
+    double sum = 0.0;
+    int i;
+    
+    /* 为 num 个参数初始化 valist */
+    va_start(valist, num);
+    
+    /* 访问所有赋给 valist 的参数 */
+    for (i = 0; i < num; i++)
+    {
+        sum += va_arg(valist, int);
+    }
+    /* 清理为 valist 保留的内存 */
+    va_end(valist);
+    
+    return sum/num;
+}
+```
+
+```c
+int main(int argc, const char * argv[]) {
+    printf("Average of 2, 3, 4, 5 = %f\n", average(4,2,3,4,5));
+    printf("Average of 5, 10, 15 = %f\n", average(3,5,10,15));
+    return 0;
+}
+```
+
 
 ## git ssh key
 
@@ -61,20 +171,175 @@ ssh -T git@git.oschina.net
 若返回
 Welcome to Git@OSC, yourname!
 
-***
 
-###NSAssert的使用
+## 响应码大致分类
+
+```
+1×× 　　保留   
+2×× 　　表示请求成功地接收   
+3×× 　　为完成请求客户需进一步细化请求   
+4×× 　　客户错误   
+5×× 　　服务器错误  
+```
+
+## 禁止使用init和new方法
+
+```objc
+- (instancetype)init UNAVAILABLE_ATTRIBUTE;
++ (instancetype)new UNAVAILABLE_ATTRIBUTE;
+```
+
+## 自定义一个UITextView时，不要将自己设置为自己的代理实现对象
+
+```objc
+@interface SenWeiboView () <UITextViewDelegate>
+@end
+@implementation SenWeiboView
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        
+        //不要这么做
+        self.delegate = self;
+    }
+    return self;
+}
+
+#pragma mark - UITextViewDelegate
+
+- (void)textViewDidBeginEditing:(UITextView *)textView {
+ 	//.....
+}
+
+- (void)textViewDidEndEditing:(UITextView *)textView {
+ 	//.....   
+}
+@end
+```
+
+因为一旦外部别人也设置这个View实例的代理，那么当前这个View实例的代理方法就不会走了。
+
+UIView控件内部应该使用`NSNotification`来代替使用`设置自己为代理`。
+
+
+## 使用`KVC`修改UITextFiled的placeholder的颜色
+
+```objc
+UITextField *filed = [UITextField new];
+UILabel *label = [filed valueForKeyPath:@"_placeholderLabel"];
+label.textColor = [UIColor whiteColor];
+```
+
+或
+
+```objc
+UITextField *filed = [UITextField new];
+[filed setValue:[UIColor whiteColor] forKey:@"_placeholderLabel.textColor"];
+```
+
+
+
+## 修改uipagecontrol点的图片的另一种方式（KVC之外）
+
+重写UIPageControl的setCurrentPage:方法实现
+
+```objc
+-(void)setCurrentPage:(NSInteger)page
+{
+	for (int i = 0; i < [self.subviews count]; i++)
+	{
+	    UIView* dotView = [self.subviews objectAtIndex:i];
+	    UIImageView* dot = nil;
+	
+	    for (UIView* subview in dotView.subviews)
+	    {
+	        if ([subview isKindOfClass:[UIImageView class]])
+	        {
+	            dot = (UIImageView*)subview;
+	            break;
+	        }
+	    }
+	
+	    if (dot == nil)
+	    {
+	        dot = [[UIImageView alloc] initWithFrame:CGRectMake(0.0f, 0.0f, dotView.frame.size.width, dotView.frame.size.height)];
+	        [dotView addSubview:dot];
+	    }
+	
+	    if (i == self.currentPage)
+	    {
+	        if(self.activeImage)
+	            dot.image = activeImage;
+	    }
+	    else
+	    {
+	         if (self.inactiveImage)
+	             dot.image = inactiveImage;
+	    }
+	}
+}
+```
+
+
+## 重写`-[UIView setFrame:]`方法，让系统计算完成的frame再进行二次调整
+
+```objc
+- (void)setFrame:(CGRect)frame {
+    
+    //1. 对系统计算完成传入的frame进行内部调整
+    CGRect rect = frame;
+    rect.size.width += 100;//对宽度调整增加100
+    
+    //2. 最后让系统设置我们修改过的frame
+    [super setFrame:rect];
+}
+```
+
+
+## 后台任务 UIBackgroundTaskIdentifier
+
+```objc
+@implementation FQLNetworkCacheManager {
+    UIBackgroundTaskIdentifier _bgTask;//注意: 一定要保存起来
+}
+
+- (void)_updateLocalItemListToDiskFilesWhenTerminal {
+
+	//1. 开启一个后台任务
+    _bgTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
+        [[UIApplication sharedApplication] endBackgroundTask:bgTask];
+        _bgTask = UIBackgroundTaskInvalid;
+    }];
+
+	//2. 后台任务要完成的代码
+    [self _doWork];
+
+	// 3. 结束后台任务
+    [[UIApplication sharedApplication] endBackgroundTask:bgTask];
+    _bgTask = UIBackgroundTaskInvalid;
+}
+
+- (void)_doWork{
+	后台线程做的事情
+}
+
+@end
+```
+
+
+## NSAssert的使用
 
 ```
 NSAssert(条件不成立 , 崩溃程序时控制台输出的信息);
 ```
 
-###宏条件编译
+## 宏条件编译
 
-```
-#define win 1
-#define mac 2
-#define other 3
+```c
+#define win     1
+#define mac     2
+#define other   3
 
 //将Platform设置到preprocessing中的宏
 void sayHello() {
@@ -91,14 +356,13 @@ void sayHello() {
 其他用法
 
 
-```
-宏函数
+```c
 #define sayHaha(haha) { \
             printf("%s", haha); \
         } \
 ```
 
-```
+```c
 void sayHelloWorld() {
     printf("hello\n");
 }
@@ -111,7 +375,7 @@ void sayMyName() {
 #define say(Name) say##Name()
 ```
 
-```
+```c
 int main(int argc, const char * argv[]) {
 	
 	//1. 
@@ -127,9 +391,7 @@ int main(int argc, const char * argv[]) {
 }
 ```
 
-***
-
-###c结构体数组内存分配与使用
+## c结构体【数组】内存分配与使用
 
 ```c
 typedef struct Person {
@@ -138,7 +400,6 @@ typedef struct Person {
 }Person;
 
 - (void)testPool {
-    
     
     Person *p = malloc(sizeof(Person));
     p->age = 19;
@@ -161,9 +422,7 @@ typedef struct Person {
 }
 ```
 
-***
-
-###封装一个保存用户登录态的工具类Session
+## 封装一个保存用户登录态的工具类Session
 
 ```objc
 @interface XZHHttpSession : NSObject
@@ -182,48 +441,8 @@ typedef struct Person {
 
 ....省略实现，可以使用sqlite、文件来存放缓存数据。
 
-***
 
-###可变字典，使用一个`数组`作为key
-
-```objc
-NSDictionary *dict = @{
-                       @"name":@[@"1", @"2", @"3"],
-                       @"address":@"user.addr",
-                       };
-
-NSMutableDictionary *mapper = [NSMutableDictionary new];
-
-[dict enumerateKeysAndObjectsUsingBlock:^(id  _Nonnull key, id  _Nonnull obj, BOOL * _Nonnull stop) {
-//        NSLog(@"key = %@, value = %@", key, obj);
-    
-    mapper[obj] = @"111";
-}];
-
-NSLog(@"mapper = %@\n", mapper);
-```
-
-输出结果:
-
-```
-mapper = {
-				//数组 : 字符串
-				(
-					1,
-					2,
-					3
-				) = 111;
-		
-				//字符串 : 字符串
-			    "user.addr" = 111;
-			}
-```
-
-
-****
-
-
-###TableView 单选、多选
+## TableView 单选、多选
 
 - Cell.h
 
@@ -420,9 +639,7 @@ mapper = {
 @end
 ```
 
-***
-
-###UITableView在没有数据List、没有网络、给出一个默认图片作为背景
+## UITableView在没有数据List、没有网络、给出一个默认图片作为背景
 
 ```objc
 1. 如果 = 0，显示没有数据的背景图
@@ -451,42 +668,30 @@ mapper = {
 }
 ```
 
-***
+## UITextfiled 的 leftView 与 rightViedw
 
-###UITextfiled 的 leftView与rightViedw
-
-```
+```c
 UITextField *txt = [[UITextField alloc] init];
-```
 
-```
 //1. 背景
 txt.background = [[UIImage imageNamed:@"背景图片"] resizableImageWithCapInsets:UIEdgeInsetsMake(1, 1, 1, 1)];
-```
-   
-``` 
+
 //2. 左侧
 txt.leftViewMode = UITextFieldViewModeAlways;
 UIImageView *leftView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"左侧View的图片"]];
 
-//让leftView图片左边有一定距离
+//3. 让leftView图片左边有一定距离
 CGRect frame = leftView.frame;
 frame.size.width += 15;
 leftView.contentMode = UIViewContentModeCenter;
 
+//4. 
 txt.leftView = leftView;
 
-```
-   
-``` 
-//3. 右侧
+//5. 右侧
 txt.rightView = [[UIView alloc] init];
 ```
-
-
-***
-
-###键盘事件
+## 键盘事件
 
 ```
 NSNotification.userInfo:
@@ -520,7 +725,7 @@ userInfo = {
 
 ```
 
-###随机产生颜色
+## 随机产生颜色
 
 ```
 + (UIColor *)randomColor {
@@ -531,7 +736,7 @@ userInfo = {
 }
 ```
 
-###CocoaPods spec 文件模板
+## CocoaPods spec 文件模板
 
 ```
 Pod::Spec.new do |s|
@@ -555,9 +760,7 @@ Pod::Spec.new do |s|
 end
 ```
 
-***
-
-###Foundation NSArray数组按照某个key排序
+## Foundation NSArray数组按照某个key排序
 
 ```
 + (NSMutableArray *)sortArrayByKey:(NSString *)key array:(NSMutableArray *)array ascending:(BOOL)ascending
@@ -579,11 +782,9 @@ end
 }
 ```
 
-***
+## NSArray filter 数组过滤
 
-###NSArray filter 数组过滤
-
-```
+```c
 //1. 
 NSArray *arrays = ...;
 
@@ -598,9 +799,7 @@ NSArray *arrays = ...;
 }]];
 ```
 
-***
-
-###NSFileManage 深度遍历与普通遍历
+## NSFileManage 深度遍历与普通遍历
 
 - 假设A文件夹，下有三个字文件夹: 文件夹B, 文件夹C, 文件夹D。
 
@@ -608,13 +807,13 @@ NSArray *arrays = ...;
 
 - B文件夹下有一个f.txt
 
-```
+```c
 NSString *path = A文件夹下的所有子文件（文件夹 or 文件）;
 ```
 
-```
 深度遍历
 
+```c
 NSArray *relativeSubpaths = [[NSFileManager defaultManager] subpathsOfDirectoryAtPath:absolutePath error:nil];
 
 输出结果:
@@ -626,9 +825,9 @@ NSArray *relativeSubpaths = [[NSFileManager defaultManager] subpathsOfDirectoryA
 6. /省略/A/e.txt
 ```
 
-```
 非深度遍历
 
+```c
 NSArray *relativeSubpaths = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:absolutePath error:nil];
 
 输出结果:
@@ -646,15 +845,15 @@ NSArray *relativeSubpaths = [[NSFileManager defaultManager] contentsOfDirectoryA
 - 非深度遍历: 只会遍历`当前目录下`的所有文件夹或文件加到数组中.
 
 
-***
+## UIApplication 获取当前App程序的状态（前台、后台）
 
-###UIApplication 获取当前App程序的状态（前台、后台）
-
-```
+```c
 UIApplicationState枚举定义了App的状态
 ```
 
-```
+常见逻辑如下:
+
+```c
 if (application.applicationState == UIApplicationStateActive) {
 
     // 程序当前正处于前台
@@ -671,11 +870,9 @@ if (application.applicationState == UIApplicationStateActive) {
 ```
 
 
-***
+## ProcessInfo实例得到系统的数据
 
-###ProcessInfo实例得到系统的数据
-
-```
+```c
 arguments:返回运行该程序所传入的参数组成的 NSArray 对象;
 environment：返回系统内所有环境变量名和值组成的 NSDictionary 对象。
 hostName：返回该进程所在系统的主机名;
@@ -692,11 +889,9 @@ physicalMemory：返回系统的物理内存;
 systemUptime：系统已运行的时间
 ```
 
-***
+## 设备类型判断宏
 
-###设备类型判断宏
-
-```
+```c
 TARGET_OS_MAC
 TARGET_OS_IPHONE
 TARGET_IPHONE_SIMULATOR
@@ -706,9 +901,7 @@ TARGET_OS_TV
 TARGET_OS_SIMULATOR
 ```
 
-***
-
-###一些类型的真正的Class
+## 一些类型的真正的Class
 
 
 ```
@@ -721,16 +914,14 @@ TARGET_OS_SIMULATOR
 @"__NSDictionaryM" : @"NSMutableDictionary",
 ```
 
-***
-
-###归档
+## 归档
 
 - 支持归档的对象的Class必须实现 `NSCoding` 协议
 - 可以使用runtime自动实现属性的归档协议代码
 
-####将一个自定义对象 序列化（归档）到磁盘文件
+### 将一个自定义对象 序列化（归档）到磁盘文件
 
-```
+```c
 //1. 准备要序列化的自定义内存对象
 id objToBeWritten = self.inMemoryCache[key];
 
@@ -741,18 +932,16 @@ NSData *dataToBeWritten = [NSKeyedArchiver archivedDataWithRootObject:objToBeWri
 [dataToBeWritten writeToFile:filePath atomically:YES];
 ```
 
-####从一个磁盘文件 反序列化（解档）成内存对象
+### 从一个磁盘文件 反序列化（解档）成内存对象
 
 
-```
+```c
 id object = [NSKeyedUnarchiver unarchiveObjectWithData:[NSData dataWithContentsOfFile:filePath]];
 ```
 
-***
+## 所有的网络请求错误code，在`NSURLError.h`可以找到如下code定义
 
-###所有的网络请求错误code，在`NSURLError.h`可以找到如下code定义
-
-```
+```c
 NS_ENUM(NSInteger)
 {
     NSURLErrorUnknown = 			-1,
@@ -812,9 +1001,9 @@ NS_ENUM(NSInteger)
 };
 ```
 
-###`__has_include(文件名)宏`
+## `__has_include(库/头文件.h)`判断是否导入某个静态库
 
-```
+```c
 #if __has_include(<sqlite3.h>)
 //从库中查找 .h
 #import <sqlite3.h>
@@ -823,6 +1012,8 @@ NS_ENUM(NSInteger)
 #import "sqlite3.h"
 #endif
 ```
+
+YYModel.h中的写法
 
 
 ```objc
@@ -844,141 +1035,28 @@ NS_ENUM(NSInteger)
 #endif
 ```
 
-###自定义一个UIView时，不要将自己设置为这个View的代理实现对象
-
-```
-@interface SenWeiboView : UITextView
-
-@end
-```
-
-```
-@interface SenWeiboView () <UITextViewDelegate>
-
-@end
-
-@implementation SenWeiboView
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        
-        //不要这么做
-        self.delegate = self;
-    }
-    return self;
-}
-
-#pragma mark - UITextViewDelegate
-
-- (void)textViewDidBeginEditing:(UITextView *)textView {
-
-}
-
-- (void)textViewDidEndEditing:(UITextView *)textView {
-    
-}
-
-#pragma mark - 绘图
-
-- (void)drawRect:(CGRect)rect
-{
-
-}
-
-@end
-```
-
-因为一旦外部别人也设置这个View实例的代理，那么当前这个View实例的代理方法就不会走了.
-
-####UIView控件内部应该使用`注册通知`来代替使用`设置自己为代理`
-
-##方法中声明一个Block变量（NSBlock类型的对象）
-
-```objc
-- (void)func {
-	//1.
-	void (^block)(void) = ^(){
-		NSLog(@"this a NSBlock Instance ...");
-	};
-	//2.
-	block();
-}
-```
-
-## id指针 与 void*指针 的区别
-
-- 首先都是任意类型的指针
-- 区别只是
-	- id指针，能够通过`objective-c语法`编译
-	- void*指针，只能通过`c语法`编译
-
-
-
 ## 解决手动的为每个属性或每个方法都去指定nonnull和nullable修饰符
 
 - 苹果为了减轻我们的工作量，专门提供了两个宏：	
-	- NS_ASSUME_NONNULL_BEGIN 开始
-	- NS_ASSUME_NONNULL_END 结束
 
-- 在这两个宏之间的代码，所有简单指针对象都被假定为nonnull，因此我们只需要去指定那些nullable的指针
-
-- 示例代码
-
-```objc
+```c
 NS_ASSUME_NONNULL_BEGIN
 
-@interface TestNullabilityClass () 
- 
-//默认由编译器加上 nonnull
-@property (nonatomic, copy) NSArray * items; 
- 
-//自定义某一些可以nullable的属性
-- (id)itemWithName:(nullable NSString *)name; 
- 
-@end 
+......
 
 NS_ASSUME_NONNULL_END
 ```
 
-***
+在这两个宏之间的代码，所有简单指针对象都被假定为nonnull，因此我们只需要去指定那些`nullable`的指针。
 
-###禁止使用init和new方法
+## 禁止使用init和new方法
 
 ```objc
 - (instancetype)init UNAVAILABLE_ATTRIBUTE;
 + (instancetype)new UNAVAILABLE_ATTRIBUTE;
 ```
 
-***
-
-```objc
-NSMutableDictionary *dic = ({
-        
-    NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
-    
-    [dictionary setObject:@"hahah" forKey:@"key"];
-    
-    dictionary;
-});
-```
-
-###使用KVC修改UITextFiled的placeholder的颜色
-
-```objc
-UITextField *filed = [UITextField new];
-UILabel *label = [filed valueForKeyPath:@"_placeholderLabel"];
-label.textColor = [UIColor whiteColor];
-```
-
-或
-
-```objc
-UITextField *filed = [UITextField new];
-[filed setValue:[UIColor whiteColor] forKey:@"_placeholderLabel.textColor"];
-```
-
-###UIView被添加、移除、出现时的回调函数
+## UIView被添加、移除、出现时的回调函数
 
 ```
 //当加入视图完成后调用  
@@ -995,100 +1073,14 @@ UITextField *filed = [UITextField new];
 (void)didMoveToWindow  
 ```
 
-###让子类必须实现某个方法，如果没有实现直接让程序崩溃
+## 让子类必须实现某个方法，如果没有实现直接让程序崩溃
 
 ```objc
 NSAssert(NO, "子类必须要实现APIManager这个protocol。");
 ```
 
-***
 
-###将一些不太重要的任务放在 idle（空闲） 时运行
-
-```objc
-- (void)idleNotificationMethod { 
-    // do something here 
-} 
- 
-- (void)registerForIdleNotification  
-{ 
-    [[NSNotificationCenter defaultCenter] addObserver:self 
-        selector:@selector(idleNotificationMethod) 
-        name:@"IdleNotification" 
-        object:nil]; 
-    NSNotification *notification = [NSNotification 
-        notificationWithName:@"IdleNotification" object:nil]; 
-    [[NSNotificationQueue defaultQueue] enqueueNotification:notification 
-    postingStyle:NSPostWhenIdle]; 
-}  
-```
-
-***
-
-```objc
-int main(int argc, char* argv[])
-{
-    @autoreleasepool
-    {
-        int returnValue;
-        @try
-        {
-            returnValue = UIApplicationMain(argc, argv, nil, 
-                NSStringFromClass([MyAppDelegate class]));
-        }
-        @catch (NSException* exception)
-        {
-            LogError(@"Uncaught exception: %@, %@", [exception description], 
-                [exception callStackSymbols]);
-            @throw exception;
-        }
-        return returnValue;
-    }
-}
-```
-
-###修改uipagecontrol点的图片的另一种方式（KVC之外）
-
-重写UIPageControl的setCurrentPage:方法实现
-
-```objc
--(void)setCurrentPage:(NSInteger)page
-{
-	for (int i = 0; i < [self.subviews count]; i++)
-	{
-	    UIView* dotView = [self.subviews objectAtIndex:i];
-	    UIImageView* dot = nil;
-	
-	    for (UIView* subview in dotView.subviews)
-	    {
-	        if ([subview isKindOfClass:[UIImageView class]])
-	        {
-	            dot = (UIImageView*)subview;
-	            break;
-	        }
-	    }
-	
-	    if (dot == nil)
-	    {
-	        dot = [[UIImageView alloc] initWithFrame:CGRectMake(0.0f, 0.0f, dotView.frame.size.width, dotView.frame.size.height)];
-	        [dotView addSubview:dot];
-	    }
-	
-	    if (i == self.currentPage)
-	    {
-	        if(self.activeImage)
-	            dot.image = activeImage;
-	    }
-	    else
-	    {
-	         if (self.inactiveImage)
-	             dot.image = inactiveImage;
-	    }
-	}
-}
-```
-
-###UIColor转UIImage并且圆角化处理
+## UIColor转UIImage并且圆角化处理
 
 - 使用CALayer圆角处理
 
@@ -1164,29 +1156,7 @@ int main(int argc, char* argv[])
 }
 ```
 
-****
-
-###Crash代码
-
-```objc
-[NSString stringWithString:nil];
-```
-
-```objc
- @{
-  	@"key" : [[NSUserDefaults standardUserDefaults] objectForKey:@"xxxxx"]
-  }
-```
-
-```objc
-NSMutableArray *array = [NSMutableArray new];
-[array addObject:nil];
-    
-NSMutableDictionary *dic = [NSMutableDictionary new];
-[dic setObject:nil forKey:@"key"];
-```
-
-***
+## 系统版本宏
 
 ```objc
 #define AS_AT_LEAST_IOS7 (kCFCoreFoundationVersionNumber > kCFCoreFoundationVersionNumber_iOS_6_1)
@@ -1195,33 +1165,8 @@ NSMutableDictionary *dic = [NSMutableDictionary new];
 #define AS_AT_LEAST_IOS9 (kCFCoreFoundationVersionNumber >= kCFCoreFoundationVersionNumber_iOS_9_0)
 ```
 
-***
 
-###xcode插件目录
-
-```
-open ~/Library/Application\ Support/Developer/Shared/Xcode/Plug-ins/
-```
-
-***
-
-###重写-[UIView setFrame:]方法，让系统计算完成的frame再进行二次调整
-
-```
-- (void)setFrame:(CGRect)frame {
-    
-    //1. 对系统计算完成传入的frame进行内部调整
-    CGRect rect = frame;
-    rect.size.width += 100;//对宽度调整增加100
-    
-    //2. 最后让系统设置我们修改过的frame
-    [super setFrame:rect];
-}
-```
-
-***
-
-###统一设置UINavigationBar的UIAppearence
+## 统一设置UINavigationBar的UIAppearence
 
 - 设置navigationBar的`背景色`和`titleView的字体颜色`
 
@@ -1289,15 +1234,11 @@ open ~/Library/Application\ Support/Developer/Shared/Xcode/Plug-ins/
 }
 ```
 
-***
-
-###ios7以上，创建UIWindow后使用了makeKeyAndVisble方法，还是不显示在屏幕.
+## ios7以上，创建UIWindow后使用了makeKeyAndVisble方法，还是不显示在屏幕.
 
 解决: 需要一个变量指针引用，否则局部指针创建完毕就释放了.
 
-***
-
-###获取到deviceToken:NSData类型，解析成字符串
+## 获取到deviceToken:NSData类型，解析成字符串
 
 错误方式: 尝试如下方式解析不出来.
 
@@ -1334,11 +1275,9 @@ NSString *token = [[[_deviceTokenData description]
                        withString:@""];
 ```
 
-***
+## UIButton内部subviews，图片左边，文字右边.
 
-###UIButton内部subviews，图片左边，文字右边.
-
-```
+```objc
 @interface ZSYCustomeButton : UIButton
 @end
 
@@ -1360,11 +1299,9 @@ NSString *token = [[[_deviceTokenData description]
 @end
 ```
 
-***
+## UINavigationController设置导航栏的segment选项卡.
 
-###UINavigationController设置导航栏的segment选项卡.
-
-```
+```objc
 - (void)viewDidLoad {
 	[super viewDidLoad];
 	
@@ -1380,10 +1317,7 @@ NSString *token = [[[_deviceTokenData description]
 }
 ```
 
-***
-
-
-###description写法模板
+## description写法模板
 
 ```objc
 - (NSString *)description {
@@ -1400,75 +1334,6 @@ NSString *token = [[[_deviceTokenData description]
     return [self description];
 }
 ```
-
-###数组越界判断写法
-
-```objc
-if ((_menuIconNameArray.count - 1) >= indexPath.row) {
-    imageName = _menuIconNameArray[indexPath.row];
-}
-```
-
-###gesture 添加
-
-```objc
--(void)initViews
-{
-    if (!_backgroundView) {
-        _backgroundView = [[UIView alloc ]initWithFrame:[UIScreen mainScreen].bounds];
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onBackgroundViewTapped:)];
-        tap.delegate = self;
-        [_backgroundView addGestureRecognizer:tap];
-        _backgroundView.backgroundColor = kFQLPopOverMenuBackgroundColor;
-    }
-    
-    if (!_popMenuView) {
-        _popMenuView = [[FQLPopOverMenuView alloc] initWithFrame:CGRectMake(0, 0, 100, 100)];
-        [_backgroundView addSubview:_popMenuView];
-        _popMenuView.alpha = 0;
-    }
-    
-    [[[UIApplication sharedApplication] keyWindow] addSubview:_backgroundView];
-    
-}
-```
-
-## `objc_msgSend` 函数类型转换的格式
-
-```
-((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
-```
-
-## 后台任务 UIBackgroundTaskIdentifier
-
-```objc
-@implementation FQLNetworkCacheManager {
-    UIBackgroundTaskIdentifier _bgTask;//注意: 一定要保存起来
-}
-
-- (void)_updateLocalItemListToDiskFilesWhenTerminal {
-
-	//1. 开启一个后台任务
-    _bgTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-        [[UIApplication sharedApplication] endBackgroundTask:bgTask];
-        _bgTask = UIBackgroundTaskInvalid;
-    }];
-
-	//2. 后台任务要完成的代码
-    [self _doWork];
-
-	// 3. 结束后台任务
-    [[UIApplication sharedApplication] endBackgroundTask:bgTask];
-    _bgTask = UIBackgroundTaskInvalid;
-}
-
-- (void)_doWork{
-	后台线程做的事情
-}
-
-@end
-```
-
 
 ## text size 计算
 
@@ -1570,14 +1435,6 @@ NSString *appDomain = [[NSBundle mainBundle] bundleIdentifier];
 
 NSURLRequestUseProtocolCachePolicy几种缓存策略
 
-
-```
-
-NSURLRequestReloadIgnoringLocalCacheData 		
-NSURLRequestReturnCacheDataElseLoad        
-NSURLRequestReturnCacheDataDontLoad        
-```
-
 ```c
 typedef NS_ENUM(NSUInteger, NSURLRequestCachePolicy)
 {
@@ -1604,3 +1461,315 @@ typedef NS_ENUM(NSUInteger, NSURLRequestCachePolicy)
 };
 ```
 
+## UIView布局subviews的 模板
+
+```c
+@interface MyView : UIView {
+    UIView *_subview1;
+    UIView *_subview2;
+    UIView *_subview3;
+}
+
+// 显示实体对象数据
+- (void)setupWithData:(id)data;
+
+@end
+@implementation MyView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (self = [super initWithFrame:frame]) {
+        [self initSubviews];
+        
+        // 只有autolayout布局，才在init方法中调用
+        [self _setupSubviewsConstrains];
+    }
+    return self;
+}
+
+- (void)initSubviews {
+    _subview1 = [[UIView alloc] initWithFrame:CGRectZero];
+    _subview2 = [[UIView alloc] initWithFrame:CGRectZero];
+    _subview3 = [[UIView alloc] initWithFrame:CGRectZero];
+    
+    [self addSubview:_subview1];
+    [self addSubview:_subview2];
+    [self addSubview:_subview3];
+}
+
+/* subviews布局一、通过autolayout约束，布局subviews */
+- (void)_setupSubviewsConstrains {
+    
+    _subview1.width = .....;
+    _subview1.height = .....;
+}
+
+/* subviews布局一、通过frame，布局subviews */
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    _subview1.frame = ......;
+    
+    _subview2.frame = ......;;
+
+    _subview3.frame = ......;;
+    
+}
+
+- (void)setupWithData:(id)data {
+    
+    //1. 通过frame
+    [self setNeedsLayout];
+    
+    //2. 通过autolayout
+    [self updateConstraints];
+    [self layoutIfNeeded];
+}
+
+@end
+```
+
+## UIView数据源获取、事件响应回调区分开
+
+```c
+//1. 内部使用的数据类型
+@interface MyViewDataSourceItem : NSObject
+@property (nonatomic, copy) NSString *topTitle;
+@property (nonatomic, copy) NSString *bottomTitle;
+@end
+@implementation MyViewDataSourceItem
+@end
+
+//2. 获取内部显示数据的几行、激烈，具体某一个位置的item数据
+@protocol MyViewDataSource <NSObject>
+- (NSInteger)numberOfSectionsInmyView:(MyView *)myView;
+- (NSInteger)myView:(MyView *)myView numberOfRowsInSection:(NSInteger)section;
+- (MyViewDataSourceItem *)myViewDataSourceItemInMyView:(MyView *)myView section:(NSInteger)section row:(NSInteger)row;
+@end
+
+//3. 内部事件触发后的回调
+@protocol MyViewDelegate <NSObject>
+- (void)myViewDidClick;
+@end
+			
+//4. 
+@interface MyView : UIView {
+    UIView *_subview1;
+    UIView *_subview2;
+    UIView *_subview3;
+    
+    id<MyViewDataSource> 	_dataSource;
+    id<MyViewDelegate>		_delegate;
+}
+@end
+@implementation MyView
+
+....
+
+
+@end
+```
+
+## CLLocationManager 定位当位置更新时，会重复多次调用回调delegate的如下函数
+
+CLLocationManager VS MKMapView，前者专门用来定位，后者主要用来展示地图，也可以用来定位。
+
+
+```objc
+#pragma mark - CLLocationManagerDelegate
+
+- (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray *)locations {
+    
+    //1. 
+    CLLocation *location = [locations lastObject];
+  
+    //2. 停止重复定位，多次回调
+    [self completeLocation:location error:nil];
+}
+```
+
+```objc
+- (void)completeLocation:(CLLocation *)location error:(NSError *)error {
+    ........
+    
+    // 停止定位，delegate清空
+    [_locationManager stopUpdatingLocation];
+    _locationManager.delegate = nil;
+}
+```
+
+## git冲突模板
+
+```c
+<<<<<<< HEAD
+本地自己的代码
+=======
+从远程分支上，拉取的b45678910这个commiit id的代码一些类型的真正的Class
+b45678910
+```
+
+## gif制作软件
+
+licecap
+
+## xcode8的bug
+
+```
+nw_host_stats_add_src recv too small, received 24, expected 28
+```
+
+http://stackoverflow.com/questions/41273773/nw-host-stats-add-src-recv-too-small-received-24-expected-28
+
+## iOS系统版本号判断宏模板
+
+首先是定义iOS8的FoundationVersion数值
+
+```c
+#ifndef XZHNetwork_Foundation_version_iOS_8_0
+#ifndef NSFoundationVersionNumber_iOS_8_0
+#define XZHNetwork_Foundation_version_iOS_8_0 NSFoundationVersionNumber_iOS_8_0
+#else
+#define XZHNetwork_Foundation_version_iOS_8_0 1140.11
+#endif
+#endif
+```
+
+然后取当前FoundationVersion与上面宏定义的Version值大小
+
+```c
+#ifndef XZHNetwork_is_grear_than_or_equalTo_iOS_8_0
+#define XZHNetwork_is_grear_than_or_equalTo_iOS_8_0 (NSFoundationVersionNumber >= XZHNetwork_Foundation_version_iOS_8_0)
+#endif
+```
+
+
+
+## python sublime3 配置
+
+view->showconsole 输入将以下代码复制到命令栏中安装package control并重启。
+
+```
+import urllib.request,os; pf = 'Package Control.sublime-package'; ipp=sublime.installed_packages_path();urllib.request.install_opener(urllib.request.build_opener(urllib.request.ProxyHandler()));open(os.path.join(ipp,pf),'wb').write(urllib.request.urlopen('http://sublime.wbond.net/' + pf.replace(' ','%20')).read())
+```
+
+查看sublime->Preferences->package control 有此选项，安装成功
+
+ctrl+shift+p 快捷键打开package control 
+
+输入install package 回车
+
+输入Anaconda回车 安装（集合python环境插件）
+
+输入sublimeREPL 回车 安装（调试插件，支持程序输入数据）
+
+sublimeREPL快捷键 preferences->Keybinding-User复制下列代码
+
+```
+[
+    {
+            "keys": ["f5"],//可以自己改变
+            "caption": "SublimeREPL: Python - RUN current file",
+            "command": "run_existing_window_command", 
+            "args":
+            {
+                "id": "repl_python_run",
+                "file": "config/Python/Main.sublime-menu"
+            }
+    }
+]
+```
+
+### sublime 3 插件
+
+```
+BracketHighlighter
+```
+
+## 弧度(radians) 与 角度(degree) 的换算
+
+角度 >>>> 弧度:
+
+```
+#define DEGREES_TO_RADIANS(x) ((x)/180.0*M_PI)
+```
+
+弧度 >>>> 角度:
+
+```
+#define RADIANS_TO_DEGREES(x) ((x) / M_PI*180.0) 
+```
+
+## gem install/update 失败解决
+
+```
+ERROR:  While executing gem ... (Errno::EPERM)
+    Operation not permitted - /usr/bin/rougify
+```
+
+解决
+
+```
+sudo gem install -n /usr/local/bin 软件名
+```
+
+如果是SSL之类的错，替换gem source
+
+```
+http://rubygems-china.oss.aliyuncs.com
+```
+
+或
+
+```
+https://ruby.taobao.org/
+```
+
+## enumerateObjectsUsingBlock中的 `*stop=YES` 就不会执行后续的循环
+
+```objc
+NSArray *arr = @[@"1", @"2" , @"3", @"4"];
+[arr enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+    if ([obj isEqualToString:@"3"]) {
+        return ;//1. 只会停止当前循环，还会继续后续的循环次数
+        *stop = YES;//2. 直接从这一次循环结束，后续的循环次数都不会再执行
+    } else {
+        NSLog(@"obj = %@", obj);
+    }
+}];
+```
+
+## Cell/UIView的init簇函数
+
+```objc
+- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
+{
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    if (self) {
+       [self initSubviews];
+    }
+    return self;
+}
+
+-(instancetype) initWithCoder:(NSCoder *)aDecoder {
+    self = [super initWithCoder:aDecoder];
+    if (self) {
+       [self initSubviews];
+    }
+    return self;
+}
+
+-(instancetype) initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+       [self initSubviews];
+    }
+    return self;
+}
+
+-(instancetype) init {
+    self = [super init];
+    if (self) {
+       [self initSubviews];
+    }
+    return self;
+}
+```

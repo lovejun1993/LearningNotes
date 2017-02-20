@@ -12,7 +12,7 @@
 6. 使用`NSNotificationQueue`可以完成异步发送通知，异步通知处理
 ```
 
-### NSNotificationCenter不会对`addObserver:对象`进行retain
+## 1. NSNotificationCenter不会对`addObserver:对象`进行retain
 
 ```objc
 @interface MyView : UIView
@@ -55,7 +55,7 @@
 
 确实是不会retain传入的obsever对象。
 
-### NSNotificationCenter直接使用的是observer对象的地址
+## 2. NSNotificationCenter直接使用的是observer对象的地址
 
 > 所以对于observer对象在dealloc时，一定要removeObserver，否则会出现野指针。
 
@@ -102,7 +102,7 @@
 如上代码在iOS9之前的系统，都会`BAD_ACESS`崩溃。但是在iOS9以及之后的系统，都不会有问题。所以，应该是iOS9修复了这个问题吧。
 
 
-### A线程发送通知，B线程关注通知
+## 3. A线程发送通知，B线程关注通知
 
 - 主线程添加observer，子线程发送notification
 
@@ -176,7 +176,7 @@
 
 以前我一直认为在A线程发送通知，那么只能在A线程注册通知.....囧。
 
-### 可以得到如下几点:
+## 可以得到如下几点:
 
 - (1) NSNotificationCenter是`多线程安全`的
 - (2) 与`哪个线程进行addObserver`没啥关系（只是操作缓存dic对象而已）
@@ -184,9 +184,9 @@
 
 所以，在哪一个线程上post一个通知，就会在哪一个线程上进行notification的转发，继而转发给observer进行处理。
 
-那这样，如果在子线程post通知，就有可能因为修改UI而造成程序崩溃。
+所以，在`子线程`上post通知，从而回调中操作UI对象，就会造成程序崩溃。
 
-### 如果想要 `发送通知` 和 `接收通知处理` 这两个步骤强制处于一个线程上了？
+## 4. 如果想要 `发送通知` 和 `接收通知处理` 这两个步骤强制处于一个线程上了？
 
 ```objc
 static NSString *key = @"haha";
@@ -212,7 +212,7 @@ static NSString *key = @"haha";
     // 设置接收通知处理的线程
     self.notificationThread = [NSThread currentThread];
     
-    // 给当前主线程runloop注册一个监听的事件端口
+    // 给当前【主线程runloop】注册一个监听的事件端口
     self.notificationPort = [[NSMachPort alloc] init];
     self.notificationPort.delegate = self;
     [[NSRunLoop currentRunLoop] addPort:self.notificationPort forMode:(__bridge NSString *)kCFRunLoopCommonModes];
@@ -260,8 +260,8 @@ static NSString *key = @"haha";
                                    components:nil
                                          from:nil
                                      reserved:0];
-    }
-    else {
+    } else {
+    
 		// 符合当前规定线程处理notification
         NSLog(@"xxxxxxxxxxxxxxxxxx thread = %@", [NSThread currentThread]);
     }
@@ -297,12 +297,61 @@ static NSString *key = @"haha";
 - (4) current thread == 子线程
 	- 临时将接收到的notification添加到数组保存
 	- 通过MachPort向主线程发送一个端口事件
-	- 主线程runloop接收到端口事件，执行NSMachPortDelegate协议函数（此时已经处于`主线程`）
+	
+- (5) `主线程runloop`接收到端口事件
+	- 【重要】流程转到`主线程`上执行
+	- 执行NSMachPortDelegate协议函数，而此时已经处于`主线程`了
 	- 取出数组中保存的notification进行处理
 
 
 如上只是一个实现通知重定向的最简单的思路，可以将这些代码封装成一个NSNotificationCenter的子类去完成。
 
-### `[NSNotificationCenter post...]`都是同步转发通知，通过NSNotificationQueue可以异步子线程post通知
+## 通过NSNotificationQueue异步发送通知
 
-....代码就不贴了
+```objc
+- (void)test4 {
+    
+    //1. 创建center
+    _myCenter = [[NSNotificationCenter alloc] init];
+    
+    //2. 创建NSNotificationQueue
+    _notificationQueue = [[NSNotificationQueue alloc] initWithNotificationCenter:_myCenter];
+    
+    //3. 创建NSNotification
+    NSNotification *notification = [[NSNotification alloc] initWithName:@"myKey" object:nil userInfo:nil];
+    
+    //4.
+    _queue = [[NSOperationQueue alloc] init];
+    
+    //5.
+    [_myCenter addObserverForName:@"myKey" object:nil queue:_queue usingBlock:^(NSNotification * _Nonnull note)
+     {
+         NSLog(@"通知回调: %@", [NSThread currentThread]);
+     }];
+    
+    //6. 发送通知
+    NSLog(@"发送通知之前");
+    [_notificationQueue enqueueNotification:notification
+                               postingStyle:NSPostWhenIdle
+                               coalesceMask:NSNotificationNoCoalescing
+                                   forModes:@[NSDefaultRunLoopMode]];
+    NSLog(@"发送通知之后");
+    
+    /*
+     typedef NS_ENUM(NSUInteger, NSPostingStyle) {
+        NSPostWhenIdle = 1,     当runloop没有其他事件接收时，才去发送这个通知（异步）
+        NSPostASAP = 2,         当runloop的当前的此次循环执行完毕，就去发送这个通知（异步）
+        NSPostNow = 3,          立马去发送这个通知（同步）
+     };
+     
+     typedef NS_OPTIONS(NSUInteger, NSNotificationCoalescing) {
+        NSNotificationNoCoalescing = 0,         不合并通知，每个通知都发送一次
+        NSNotificationCoalescingOnName = 1,     合并同名的通知，只会发送一条这样的通知
+        NSNotificationCoalescingOnSender = 2,   合并来自同一个发送者的通知，只会发送一条这样的通知
+     };
+     */
+    
+    //7. 移除这个通知（从不执行合并的操作队列顶部移除通知）
+//    [_notificationQueue dequeueNotificationsMatching:notification coalesceMask:NSNotificationNoCoalescing];
+}
+```

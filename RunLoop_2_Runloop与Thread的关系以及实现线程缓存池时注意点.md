@@ -1,4 +1,4 @@
-##线程的种类
+## 线程的种类
 
 ### 一次性 的线程对象
 
@@ -8,14 +8,17 @@
 	
 - (2) 当一次性任务执行`完毕`之后，线程对象就会`被系统释放`所占用的内存资源
 
+- (3) 即使使用指针持有住这类型的NSThread对象，也`无法响应`后续的线程任务代码
+
 ### 永久存活（常驻内存） 的线程对象
 
 - (1) 有时候需要一个`永久`存活在后台的线程对象，为App程序在整个运行期间提供一些特定的数据服务、后台定时任务代码等等
 
 - (2) 也就是说要让这个线程能`随时`处理事件、`无限次`处理事件、而且不能让线程对象`退出`执行
 
+## 如何实现一个永久存在的thread，并且可以随时不断的接收分配线程任务？
 
-##如何实现一个永久存在的thread，并且可以随时不断的接收分配线程任务？
+### 测试1、使用`局部`的线程对象
 
 自定义一个NSThread
 
@@ -32,12 +35,14 @@
 @end
 ```
 
-ViewController使用自定义的NSThread
+ViewController中开起使用一个`局部`的MyThread线程
 
 ```objc
 @implementation ViewController
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+
+	// 局部线程对象
     MyThread *t = [[MyThread alloc] initWithTarget:self selector:@selector(doWork) object:nil];
     [t start];
 }
@@ -56,34 +61,9 @@ ViewController使用自定义的NSThread
 2016-11-27 15:33:02.625 RunLoopBasic[1889:21240] MyThread dealloc >>>> <MyThread: 0x7fa3fbc0d640>{number = 2, name = (null)}
 ```
 
-执行完线程体函数`doWork`之后，线程对象就被废弃了。
+执行完线程体函数`doWork`之后，线程对象就被废弃了，就再也无法找到了。
 
-那么尝试，将线程对象使用成员变量保存起来。
-
-```objc
-@implementation ViewController{
-    MyThread *_t;
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    _t = [[MyThread alloc] initWithTarget:self selector:@selector(doWork) object:nil];
-    [_t start];
-}
-
-- (void)doWork {
-    NSLog(@"MyThread doWork >>>> %@", [NSThread currentThread]);
-}
-
-@end
-```
-
-运行结果
-
-```
-2016-11-27 15:34:36.125 RunLoopBasic[1990:23159] MyThread doWork >>>> <MyThread: 0x7fad1bf07a80>{number = 2, name = (null)}
-```
-
-这样做的话，线程对象确实是不会被废弃了。那么试下能不能随时执行任务了？
+### 测试2、使用指针去持有住线程对象，不让其废弃
 
 ```objc
 @implementation ViewController{
@@ -93,6 +73,7 @@ ViewController使用自定义的NSThread
 - (void)viewDidLoad {
     [super viewDidLoad];
     
+    // 初始化创建并持有线程对象
     _t = [[MyThread alloc] initWithTarget:self selector:@selector(doInitThread) object:nil];
     [_t start];
 }
@@ -114,23 +95,29 @@ ViewController使用自定义的NSThread
 @end
 ```
 
-运行之后，不论点击屏幕多少次只有一次初始化线程的log
+运行后，点击一次屏幕可以得到如下打印
 
 ```
-2016-11-27 15:42:39.203 RunLoopBasic[2448:31255] MyThread doInitThread >>>> <MyThread: 0x7fcc4b50f760>{number = 2, name = MyThread}
+2016-11-27 15:34:36.125 RunLoopBasic[1990:23159] MyThread doWork >>>> <MyThread: 0x7fad1bf07a80>{number = 2, name = (null)}
 ```
 
-只走了thread的init函数实现，但是performSelector的操作并没有被thread执行。
+但是后续继续多次点击屏幕，却没与任何的输出了。断点打到`doWork`，发现根本不会进来。
 
-###既然NSThread对象没有被废弃，那为什么后续分配任务执行时，却无法响应了？
+说明这样持有住线程对象，虽然可以让线程对象不会被废弃，一直可以在内存中找到。
 
-我大致怀疑可能是这样的:
+但是，被持有的线程，无法继续响应第二次和之后的任务了。
+
+## 既然NSThread对象没有被废弃，那为什么后续分配任务执行时，却无法响应了？
+
+### 我大致怀疑可能是这样的:
 
 - (1) 虽然NSThread对象的确是存在
-- (2) 但是NSThread对象的状态可能是finished，造成无法再执行任务了
+- (2) 但是NSThread对象的状态可能是`finished`，造成无法再执行任务了
+
+按照常识来说，只有当线程状态为`finished`时，就不会再接受任务执行了。
 
 
-重新改写MyThread，添加description详细信息输出
+### 重新改写MyThread，添加description信息，输出当前线程的各种状态值
 
 ```objc
 @implementation MyThread
@@ -191,9 +178,11 @@ ViewController使用自定义的NSThread
 2016-11-27 15:52:12.663 RunLoopBasic[2938:40266] after performSelector >>>> <MyThread - 0x7f83d2f6b040>: isExecuting = 0, isCancelled = 0, isFinished = 1
 ```
 
-可以看到点击屏幕的函数时，`thread.isFinished = 1`。说明thread已经执行结束了，那说明线程执行结束，就不会再响应分配给的任务了吗？
+可以看到，`pre performSelector`打印时，`thread.isFinished = 1`，说明thread已经执行结束了，所以就不会再响应分配给的任务了吗？
 
-###尝试开启NSThread的runloop事件循环监听，看能否解决thread无法再响应任务的问题
+这正是`一次性`线程的特点，指定了线程入口函数，然后start，那么就会走指定的线程入口函数，且只会`走一次`，然后线程的状态就是finish。
+
+## 尝试开启NSThread的RunLoop事件循环，看能否解决thread无法再响应任务的问题
 
 ```objc
 @implementation ViewController{
@@ -263,7 +252,37 @@ ViewController使用自定义的NSThread
 
 总之可以看到开启了thread的runloop之后，线程的确就可以继续接受任务了。
 
-###对比AFURLConnectionOperation创建单例NSThread的代码，发现除了开启runloop之外，还给runloop添加了一个NSMachPort事件源
+## 对比AFURLConnectionOperation创建单例NSThread的代码，发现除了开启runloop之外，还给`RunLoop添加了一个NSMachPort事件源`
+
+AFN 2.x 的代码如下:
+
+```objc
++ (void)networkRequestThreadEntryPoint:(id)__unused object {
+    @autoreleasepool {
+        [[NSThread currentThread] setName:@"AFNetworking"];
+
+		//1. 
+        NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
+        
+        //2 给runloop注册了一个基于port事件源
+        [runLoop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode];
+        
+        //3. 
+        [runLoop run];
+    }
+}
+
++ (NSThread *)networkRequestThread {
+    static NSThread *_networkRequestThread = nil;
+    static dispatch_once_t oncePredicate;
+    dispatch_once(&oncePredicate, ^{
+        _networkRequestThread = [[NSThread alloc] initWithTarget:self selector:@selector(networkRequestThreadEntryPoint:) object:nil];
+        [_networkRequestThread start];
+    });
+
+    return _networkRequestThread;
+}
+```
 
 尝试也给MyThread添加一个NSMachPort事件源
 
@@ -339,22 +358,39 @@ ViewController使用自定义的NSThread
 2016-11-27 16:23:01.345 RunLoopBasic[4685:69314] MyThread doWork >>>> <MyThread - 0x7fae2b623390>: isExecuting = 1, isCancelled = 0, isFinished = 0
 ```
 
-###可以看到当给thread的runloop，添加了一个NSMachPort事件源之后，有两个关键性的地方变了
+可以看到，线程对象一直处于`isExecuting = 1`的状态，就是说一直都是`执行中`，那么就可以随时接受任务。
+
+这个相比前面的例子，都是可以让线程后续继续接受任务。
+
+但是前一个例子的，`isFinished = 1, isExecuting = 0`。而当前例子的，`isFinished = 0, isExecuting = 1`。
+
+区别就是，前面例子的线程已经处于`结束`了，而本例子的线程一直处于`执行中`。
+
+我觉得，按照常理来说，当前例子展示的线程状态才是正确的吧。
+
+## 可以看到当给thread的runloop，添加了一个NSMachPort事件源之后，有两个关键性的地方变了
 
 
 - (1) 给runloop添加一个NSMachPort事件源之后，thread的状态和之前不一样了
 
 ```c
-- (1) thread.isExecuting = 1
-- (2) thread.isFinished = 0
+- (1) isFinished = 1, isExecuting = 0
 ```
 
-- (2) doInitThread实现，中的第4句NSLog打印的代码没有被执行
+```
+- (2) isFinished = 0, isExecuting = 1
+```
+
+- (2) doInitThread实现中，的**第4句NSLog打印的代码`没有`被执行**
+
+说明
 
 ```
-- runloop成功开启之后
-- 会卡住当前执行[runloop run]实现函数流程
-- 因为CFRunloopRun()函数内部是一个do while的循环
+1. runloop成功开启之后，必须先添加RunLoopSource
+2. 会卡住当前执行[runloop run]实现函数的，后面的代码执行流程
+3. 但神奇的是，居然不会阻塞整个线程，整个线程还是正常执行，只是开起runloop的函数后面的代码被卡住了
+4. CFRunloopRun()函数内部是一个do-while的死循环，只有runloop结束才会退出执行
+5. 我怀疑，CFRunloopRun()开起后，是处于另外一个系统的线程或系统进程，所以才会不会卡住开起runloop的线程
 ```
 
 测试下给runloop添加一个事件源source之后，`[runloop run];`之后的代码都不会被执行
@@ -492,7 +528,7 @@ ViewController使用自定义的NSThread
 
 线程的状态，始终都是执行中。
 
-##为何给runloop添加了source监听之后，runloop就会一直卡着代码执行，让线程的状态一直处于executing了？
+## 为何给RunLoop添加了RunLoopSource，RunLoop就会一直卡着代码执行，让线程的状态一直处于executing了？
 
 
 去CFRunLoop版本开源代码中查看下开启runloop执行的代码
@@ -555,7 +591,7 @@ typedef CF_ENUM(SInt32, CFRunLoopRunResult) {
 
 ok，到此为止，对于如何正确的开启一个thread的runloop以及让一个线程长期存活以待不断的接收任务执行的使用就是如上了。
 
-##一个thread与一个runloop之间的关系
+## 一个thread与一个runloop之间的关系
 
 苹果没有给出任何api直接创建一个RunLoop对象，只能通过如下系统函数获取得到一个创建完毕的runloop
 
@@ -709,7 +745,7 @@ struct __CFRunLoop {
 全局缓存dic ---> runloop ---> thread
 ```
 
-下面证实下，只要thread开启runloop，那么thread就不会被废弃:
+## 证实、只要thread开启runloop，那么thread就不会被废弃:
 
 ```objc
 @implementation ViewController
@@ -770,7 +806,7 @@ struct __CFRunLoop {
 - (2) 同样doInitThread实现内的流程会卡在3.5句代码`[runloop run];`地方，不会再往下执行
 
 
-###那么不能简单的缓存NSThread对象，那么如果是简单的缓存`dispatch_queue_t`实例了？
+## 那么不能简单的缓存NSThread对象，那么如果是简单的缓存`dispatch_queue_t`实例了？
 
 ```c
 static dispatch_queue_t SingletonQueue() {
@@ -813,12 +849,13 @@ static dispatch_queue_t SingletonQueue() {
 2016-12-15 00:07:15.003 Demo[9816:98378] time = 2016-12-14 16:07:15 +0000, thread.isExecuting = 1, thread.isFinished = 0
 ```
 
-可以看到最终代码执行所在的thread状态一直是`isExecuting == 1`，所以可以通过缓存`dispatch_queue_t实例`来代替之前缓存`NSThread对象`就简单的多了。
+可以看到最终代码执行所在的thread状态一直是`isExecuting == 1`，和之前给线程添加source之后的效果是一样的。
 
-如果想要缓存`NSThread对象`，必须完成如下步骤:
+
+我觉得GCD应该是对缓存起来的NSThread对象，都是像上面一样做了处理吧:
 
 - (1) 获取线程对应的runloop，也就是让系统完成创建runloop并于线程绑定
 - (1) 给runloop添加`CFRunLoopSource事件源`，如果不添加那么runloop无法开启
 - (2) 开启`runloop`
 
-那么所以说，通过缓存`dispatch_queue_t实例`来完成线程池还是方便的多了。
+那么说通过缓存`dispatch_queue_t实例`来完成线程池还是方便的多了。

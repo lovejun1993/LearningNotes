@@ -90,21 +90,60 @@
 
 从上述代码小结几点:
 
-- (1) 创建了一个常驻后台的单例线程对象，并开启runloop接收各种基于NSPort的端口事件
+### 一、创建了一个常驻后台的单例线程对象，并开启runloop，即添加一个RunLoopSource:
 
-- (2) 给单例NSThread对象的runloop 添加此时创建出来的如下两个对象的port事件源
-	-  创建出来的 `self.outputStream` 对象的事件
-	-  创建出来的 `self.connection` 对象的事件
+- NSPort Source
+- NSTimer Source
+- Observer Source
+- `自定义的dispatch_source_t`
 
-- (3) 并在这个单例NSThread对象上，完成耗时的操作
-	- NSOutputStream 完成向某个文件写入数据
-	- NSURLConnection 完成对某一个url的网络请求
+总之，必须添加一个source，才能开起RunLoop
 
-- (4) 当单例NSThread完成耗时操作之后，线程的runloop会接收到来自系统线程基于NSPort的端口事件，正是上面注册的两个对象的事件源
-	- 接收到 `self.outputStream` 对象完成时的事件
-	- 接收到 `self.outputStream ` 对象完成时的事件
+### 二、给单例NSThread对象的runloop 添加此时创建出来的如下两个对象的基于port的RunLoopSource，
+
+-  创建出来的 `self.outputStream` 对象的事件
+-  创建出来的 `self.connection` 对象的事件
+
+
+```objc
+//1. 
+self.connection = [[NSURLConnection alloc] initWithRequest:self.request delegate:self startImmediately:NO];
+		
+//2. 获取单例NSThread的runloop
+NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
 	
-那么对于AFN 2.x版本的一个网络请求实现大概思路就是上面这样的:
+//3. 并在获取的runloop上注册监听NSURLConnection端口事件、NSOutputStream端口事件
+for (NSString *runLoopMode in self.runLoopModes) {
+    [self.connection scheduleInRunLoop:runLoop forMode:runLoopMode];
+    [self.outputStream scheduleInRunLoop:runLoop forMode:runLoopMode];
+}
+```
+
+通过 `scheduleInRunLoop:forMode:`给当前线程的RunLoop添加Source。
+
+### 三、并在这个单例NSThread对象上，完成耗时的操作
+
+- NSOutputStream 完成向某个文件写入数据
+- NSURLConnection 完成对某一个url的网络请求
+
+```objc
+//1. 创建NSURLConnection，并将当前operation对象设置为delegate
+self.connection = [[NSURLConnection alloc] initWithRequest:self.request delegate:self startImmediately:NO];
+
+.........
+
+//4. 在子线程上开起比较好使的任务
+[self.outputStream open];
+[self.connection start];
+```
+
+
+### 四、当单例NSThread完成耗时操作之后，线程的runloop会接收到来自系统线程基于NSPort的端口事件，正是上面注册的两个对象的事件源
+
+- 接收到 `self.outputStream` 对象完成时的RunLoopSource
+- 接收到 `self.outputStream ` 对象完成时的RunLoopSource
+	
+## 那么对于AFN `2.x`版本的一个网络请求实现大概思路就是上面这样的:
 
 ```
 NSOperation 1
@@ -238,7 +277,10 @@ didReceiveResponse:(NSURLResponse *)response
 2016-11-25 00:15:44.999 RunLoopBasic[6789:99219] CompletionBlock >>> current thread = <NSThread: 0x7fbe40e1bce0>{number = 5, name = (null)}
 ```
 
-可以看到operation其实也是在一个子线程上进行执行start方法实现的。可以看下`-[AFHTTPRequestOperationManager GET:parameters:success:failure:]`中对创建出来的operation是如何执行的
+可以看到`NSOperation`对象本身，就是在一个`子线程`上进行执行start方法实现的。
+
+
+可以看下`-[AFHTTPRequestOperationManager GET:parameters:success:failure:]`中对创建出来的operation是如何执行的
 
 ```objc
 @implementation AFHTTPRequestOperationManager
@@ -260,10 +302,14 @@ didReceiveResponse:(NSURLResponse *)response
 @end
 ```
 
-那么所以其实使用AFHTTPRequestOperationManager提供的发起请求时，并不需要再自己包一层GCD异步子线程的代码了。因为内部已经是使用了NSOperationQueue去异步子线程执行operation对象了。
+那么所以其实使用AFHTTPRequestOperationManager提供的发起请求时，并不需要再自己包一层GCD异步子线程的代码了。
+
+因为内部已经是使用了NSOperationQueue去异步子线程执行operation对象了。
 
 
-回调执行`-[AFURLConnectionOperation connection:didReceiveResponse:]`所在的线程正是开始创建的那个单例的NSThread线程。那么回调是在单例NSThread线程上，那如何回到NSOperation原来所在的线程上了？
+回调执行`-[AFURLConnectionOperation connection:didReceiveResponse:]`所在的线程正是开始创建的那个`单例的NSThread线程`。
+
+那么回调是在`单例NSThread线程`上，那如何回到`NSOperation所在的线程`上了？
 
 ```objc
 @implementation AFURLConnectionOperation
@@ -283,31 +329,46 @@ didReceiveResponse:(NSURLResponse *)response
     [self finish];
 }
 
+@end
+```
+
+可以看到，`connectionDidFinishLoading:`函数中，最后一句代码`[self finish]`，找到对应的实现继续看
+
+```objc
 @implementation AFURLConnectionOperation
 
 - (void)finish {
 
-	// 调用 setState: 实现告诉系统这个opertaion执行结束了
+	//1. 调用 setState: 修改当前operatin的状态为Finish
     [self.lock lock];
     self.state = AFOperationFinishedState;
     [self.lock unlock];
 
-	// 回调主线程发送通知
+	//2. 回调主线程发送通知
     dispatch_async(dispatch_get_main_queue(), ^{
         [[NSNotificationCenter defaultCenter] postNotificationName:AFNetworkingOperationDidFinishNotification object:self];
     });
 }
 
+@end
+```
+
+从上代码中，可以看到 `1`的代码比较重要，`2`都是向外抛回调了。`1`肯定是重写`setter`，跟进去看
+
+```objc
+@implementation AFURLConnectionOperation
+
 - (void)setState:(AFOperationState)state {
+
+	//1. 状态变化是否合法检测
     if (!AFStateTransitionIsValid(self.state, state, [self isCancelled])) {
         return;
     }
 	
-	// 手动发出KVO通知，告诉系统当前operation对象正常结束执行
+	//2. 手动发出KVO通知，告诉系统当前operation对象正常结束执行
     [self.lock lock];
     NSString *oldStateKey = AFKeyPathFromOperationState(self.state);
     NSString *newStateKey = AFKeyPathFromOperationState(state);
-
     [self willChangeValueForKey:newStateKey];
     [self willChangeValueForKey:oldStateKey];
     _state = state;
@@ -320,27 +381,55 @@ didReceiveResponse:(NSURLResponse *)response
 @end
 ```
 
-此时就会由系统执行`-[NSOperation completionBlock]`，设置给operation对象的block任务。AFN重写了`-[NSOperation setCompletionBlock:]`方法实现，为了让最终block任务在主线程或者用户自己设置的线程上执行。
+然后再看下`AFKeyPathFromOperationState()`实现
 
-
-小结下线程的流转:
-
-
+```objc
+static inline NSString * AFKeyPathFromOperationState(AFOperationState state) {
+    switch (state) {
+        case AFOperationReadyState:
+            return @"isReady";
+        case AFOperationExecutingState:
+            return @"isExecuting";
+        case AFOperationFinishedState:
+            return @"isFinished";
+        case AFOperationPausedState:
+            return @"isPaused";
+        default: {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunreachable-code"
+            return @"state";
+#pragma clang diagnostic pop
+        }
+    }
+}
 ```
-1. NSOperation被NSOperationQueue子线程异步调度执行所在 `线程A` 执行start
 
-2. 然后start内部又让流程走到了 `单例NSThread线程B` 完成具体的网络请求
+就是根据AFN自定义的state枚举值，转换成对应的NSOperation内部认识的状态字符串。
 
-3. 完成网络请求之后， 仍然是在 `单例NSThread线程B` 完成所有的 NSConnectionDelegate回调函数
+就是`2.`，最后大致执行了如下代码
 
-4. opertaion被执行finish方法，发出KVO通知告诉系统结束执行。然后operation对象的completionBlock被随机分配到另外一个 `子线程C` 上执行
+```objc
+//1.
+NSString *oldStateKey = @"isExecuting";
+NSString *newStateKey = @"isFinished";
 
-5. completion内部，又将流程带到了用户自己设置的 `线程D（默认是主线程）` 上执行
+//2.
+[self willChangeValueForKey:newStateKey];
+[self willChangeValueForKey:oldStateKey];
+_state = state;
+[self didChangeValueForKey:oldStateKey];
+[self didChangeValueForKey:newStateKey];
 ```
 
-注意，对于NSOperation对象，按照上述网络请求的代码的话，是在主线程上进行创建的。
+实际上就是通知iOS系统，当前这个NSOpereation对象可以结束执行了，任务都完成了...
 
-##最终由系统的线程完成网络请求数据交换
+
+那么就会由系统执行`-[NSOperation completionBlock]`，设置给operation对象的block任务。
+
+AFN重写了`-[NSOperation setCompletionBlock:]`方法实现，为了让最终block任务在主线程或者用户自己设置的线程上执行。
+
+
+## 最终由系统的线程完成网络请求数据交换
 
 但是后来发现最终的网络数据请求是在苹果系统内部的单独的子线程上，使用`CFSocket`相关的函数api完成的，而且还有两个系统子线程:
 	
