@@ -205,19 +205,21 @@ static NSString *key = @"haha";
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    // 初始化
+    //1. 初始化数组，用于保存notification
     self.notifications = [[NSMutableArray alloc] init];
     self.notificationLock = [[NSLock alloc] init];
     
-    // 设置接收通知处理的线程
+    //2. 设置接收通知处理的线程
     self.notificationThread = [NSThread currentThread];
     
-    // 给当前【主线程runloop】注册一个监听的事件端口
+    //3. 创建一个port事件源，并设置回调为自己
     self.notificationPort = [[NSMachPort alloc] init];
     self.notificationPort.delegate = self;
+    
+    //4. 给当前【主线程runloop】注册一个port事件源，那么接收到port事件时，流程已经处于【主线程】
     [[NSRunLoop currentRunLoop] addPort:self.notificationPort forMode:(__bridge NSString *)kCFRunLoopCommonModes];
     
-    // 关注通知
+    //5. 关注通知回调
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(processNotification:) name:key object:nil];
 }
 
@@ -229,8 +231,32 @@ static NSString *key = @"haha";
     });
 }
 
+#pragma mark - NSNotification 
+
+- (void)processNotification:(NSNotification *)notification {
+    
+    if ([NSThread currentThread] != _notificationThread) {
+		
+		//1. 将不符合当前线程处理的通知，添加到重定向的数组中临时保存
+        [self.notificationLock lock];
+        [self.notifications addObject:notification];
+        [self.notificationLock unlock];
+        
+        //2. 发送一个port事件，通知其对应线程，即执行NSMachPortDelegate协议方法
+        [self.notificationPort sendBeforeDate:[NSDate date]
+                                   components:nil
+                                         from:nil
+                                     reserved:0];
+    } else {
+    
+		// 符合当前规定线程处理notification
+        NSLog(@"xxxxxxxxxxxxxxxxxx thread = %@", [NSThread currentThread]);
+    }
+}
+
 #pragma mark - NSMachPortDelegate 
 
+// 由于是【主线程】的port回调函数，所以该函数已经处于【主线程】了
 - (void)handleMachMessage:(void *)msg {
     [self.notificationLock lock];
     
@@ -244,27 +270,6 @@ static NSString *key = @"haha";
     };
     
     [self.notificationLock unlock];
-}
-
-- (void)processNotification:(NSNotification *)notification {
-    
-    if ([NSThread currentThread] != _notificationThread) {
-		
-		// 将不符合当前线程处理的通知，添加到重定向的数组中临时保存
-        [self.notificationLock lock];
-        [self.notifications addObject:notification];
-        [self.notificationLock unlock];
-        
-        // 发送一个port事件，通知其对应线程，即执行NSMachPortDelegate协议方法
-        [self.notificationPort sendBeforeDate:[NSDate date]
-                                   components:nil
-                                         from:nil
-                                     reserved:0];
-    } else {
-    
-		// 符合当前规定线程处理notification
-        NSLog(@"xxxxxxxxxxxxxxxxxx thread = %@", [NSThread currentThread]);
-    }
 }
 
 @end

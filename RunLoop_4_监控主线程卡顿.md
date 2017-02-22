@@ -1,20 +1,19 @@
-##之前用过Bugly的线程卡顿监控上报，但是一直想搞清楚原理
+## 之前用过Bugly的线程卡顿监控上报，但是一直想搞清楚原理
 
 学习来源: http://www.tanhao.me/code/151113.html/
 
 
-###大概思路
+### 大概思路
 
-- 在一个子线程上，注册监控`主线程`的runloop状态改变的observer
+- (1) 在一个`子线程`上创建一个observer，注册监控`主线程runloop`状态改变
+- (2) 然后根据状态改变之间的`时间差`，来判断是否卡顿
 
-- 然后根据状态改变之间的时间差，来判断是否卡顿
-
-- 线程卡顿分两种
-	- 多次的小时间卡顿
-	- 单词的长时间卡顿
+- (3) 线程卡顿分两种
+	- 多次，小时间，卡顿
+	- 单次，长时间，卡顿
 
 
-###先看个例子，看runloop状态改变的规律
+### 先看个例子，看runloop状态改变的规律
 
 runloop状态枚举定义
 
@@ -100,7 +99,7 @@ ViewController+监视主线程runloop状态值改变
 
 static void runLoopObserverCallBack(CFRunLoopObserverRef observer, CFRunLoopActivity activity, void *info)
 {
-    //单例对象保存当前主线程runloop的状态
+    //1. 单例对象保存当前主线程runloop的状态
     PerformanceMonitor *moniotr = (__bridge PerformanceMonitor*)info;
     NSLog(@"pre state = %ld", moniotr->activity);
     
@@ -326,9 +325,9 @@ kCFRunLoopAfterWaiting >>> kCFRunLoopBeforeSources
 
 那下面就是主要监视主线程runloop状态是如上两种状态切换时，查看其时间差是否超过一定数值，超过数值即视为卡顿.
 
-##编写一个单例类来封装监控主线程runloop
+## 编写一个单例类来封装监控主线程runloop
 
-###AppDelegate启动回调函数开始监控
+### AppDelegate启动回调函数开始监控
 
 ```objc
 @implementation AppDelegate

@@ -1,6 +1,6 @@
-##NSMachPort、完成不同线程之间的通信
+## NSMachPort、完成不同线程之间的通信
 
-###苹果提供基于port端口事件的
+### 苹果提供基于port端口事件的
 
 NSPort是父类，有三个子类实现
 
@@ -39,9 +39,11 @@ NSMachPortDelegate
 
 NSMessagePort已经被屏蔽使用了。NSSocketPort好像没怎么看到使用过，暂时就懒得看了....
 
-##下面使用NSMachPort完成不同线程之间的通信
+## 下面使用NSMachPort完成不同线程之间的通信
 
-MachPort、MessagePort，在`iOS7`之后苹果不再面向开发者，因为其使用太过复杂、麻烦。所以如下代码也只是伪代码，需要使用以前老本的Xcode才能编译通过。
+MachPort、MessagePort，在`iOS7`之后苹果不再面向开发者，因为其使用太过复杂、麻烦。
+
+所以如下代码也只是伪代码，需要使用以前老本的Xcode才能编译通过。
 
 
 - (1) ViewController中接收子线程发送的port消息后，向子线程发送一个port消息
@@ -57,13 +59,13 @@ MachPort、MessagePort，在`iOS7`之后苹果不再面向开发者，因为其�
 - (void)viewDidLoad {
     [super viewDidLoad];
 	
-	//1. 创建主线程的port
+	//1. 创建主线程自己的port
     NSPort *myPort = [NSMachPort port];
     
-    //2. 设置port的代理回调对象，接收子线程发送过来的数据
+    //2. 指定接收到port消息时的回调
     myPort.delegate = self;
     
-    //3. 把port加入runloop，接收port消息
+    //3. 把port事件源注册当当前线程的runloop，进行监听
     [[NSRunLoop currentRunLoop] addPort:myPort forMode:NSDefaultRunLoopMode];
     
     //4. 启动次线程,并传入主线程的port
@@ -154,7 +156,7 @@ NSUInteger kOperation2 = 100002;
         //3. 设置port的代理回调对象，接收子线程发送过来的数据
         _localPort.delegate = self;
         
-        //4. 获取线程的runloop
+        //4. 获取当前`子线程`的runloop
         NSRunLoop *runloop = [NSRunLoop currentRunLoop];
         
         //5. 让当前线程的runloop监听发给这个localPort的事件源
@@ -215,9 +217,20 @@ NSUInteger kOperation2 = 100002;
 - (3) 向持有的NSPort对象发送消息
 - (4) 指定线程的runloop接收到监听的NSPort事件之后，唤醒绑定的线程执行NSPortDelegate方法实现，处理接收到的NSPort消息
 
-##苹果推荐使用如下进行线程通信:
+## 苹果推荐使用如下进行线程通信:
 
 - (1) GCD DisPach Queue
 - (2) NSOperation Queue
 - (3) NSObject分类的各种的 performSelecter:onThread:…方法（不如使用上面两种）
 
+## RunLoop 与 Thread 的关系:
+
+### Thread
+
+- (1) 就像苦力工，什么事情都干
+- (2) 但是不知道什么时候该休息，什么时候该做事
+
+### RunLoop
+
+- (1) 就像领导，负责接收用户、老板的命令
+- (2) 然后通知Thread苦力开始工作，工作完成时通知Thread睡觉
