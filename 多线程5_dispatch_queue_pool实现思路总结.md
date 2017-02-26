@@ -1,19 +1,31 @@
-## iOS系统中提供的 GCD dispatch queue 的种类
+## `dispatch_queue_t`
 
-### 不管什么队列，其数据结构都是 `队列` ，都是保持 `先进先出` 来调度block
+### 数据结构都是 `队列` ，都是保持 `先进先出` 来调度block
 
-- (1) 串行队列:
-	- dispatch main queue 系统主线程队列  （1）
-	- 我们自己创建的 serial queue 	（1）
+#### 分为两种类型的队列
 
-- (2) 全局并发队列: 
-	- 系统并发队列: 根据四种线程权限又分为`四种`全局并发队列   （4）
-	- 我们自己创建的 concurrent queue  （1）
+- 串行 >>> `一个一个`接着调度 >>> `按照先后顺序`
+- 并行 >>> `随机取出几个`一起调度 >>> `随机无序`
 
-所以，总共分为7种队列。
+#### 串行队列:
+	
+- (1) `dispatch_main_queue` 系统主线程串行队列
+- (2) `dispatch_queue_create("队列名", NULL)` 自行创建的串行队列
 
+#### 全局并发队列: 
 
-### iOS8之前，四种权限的全局并发GCD队列优先级、以及获取方式
+- `dispatch_get_global_queue()` 系统全部并发队列，其实分为如下四个不同的queue
+	- (3) high queue
+	- (4) default queue
+	- (5) low queue
+	- (6) backgroud queue
+- (7) `dispatch_queue_create("队列名", DISPATCH_QUEUE_CONCURRENT)` 自行创建的并发队列
+
+所以，总共分为`7`种队列。
+
+## `iOS8之前`，四种权限的全局并发GCD队列优先级、以及获取方式
+
+使用的是类似如下，`dispatch queue priority` 队列的优先级，来获取queue。
 
 ```c
 #define DISPATCH_QUEUE_PRIORITY_HIGH 2
@@ -21,6 +33,8 @@
 #define DISPATCH_QUEUE_PRIORITY_LOW (-2)
 #define DISPATCH_QUEUE_PRIORITY_BACKGROUND INT16_MIN
 ```
+
+其调度权限，依次从上往下`降低`。
 
 ```c
 // 注意，第二个参数一般默认都写0即可
@@ -30,7 +44,7 @@ dispatch_queue_t queue3 = dispatch_get_global_queue(-2, 0);
 dispatch_queue_t queue4 = dispatch_get_global_queue(INT16_MIN, 0);
 ```
 
-### 苹果对获取全局队列方法的注释:
+苹果对获取全局队列方法的注释:
 
 ```c
 The well-known global concurrent queues may not be modified. Calls to
@@ -40,7 +54,7 @@ The well-known global concurrent queues may not be modified. Calls to
 
 可以看到，对global queue 做`dispatch_suspend(), dispatch_resume(), dispatch_set_context()`这三种处理，是没有任何效果的。
 
-### 刚开始我认为四种优先级的队列，都是一个队列，只是权限不同而已，这是错误的理解。
+## 刚开始我认为四种优先级的队列，都是`同一个对象`，只是权限不同而已，这是`错误`的。
 
 ```objc
 - (void)testGlobalQueue {
@@ -63,49 +77,132 @@ The well-known global concurrent queues may not be modified. Calls to
 
 可以看到:
 
-- (1) 得到实例的数据类型是: `OS_dispatch_queue_root`
-- (2) 这4个实例的地址，是`不同`的
+- (1) 真正的queue类型是`OS_dispatch_queue_root`
+- (2) 4个queue的内存地址，都是`不同`的
 
-## dispatch queue 是否需要控制实例化的数量？
+所以说，四种权限级别的queue，就是四个不同的对象。
+
+## 是否需要控制创建`dispatch_queue_t`实例的数量？
 
 ### 对于 GCD Concurrent Queue:
 
 - (1) 最终GCD底层对于线程已经使用了线程池机制优化的
 - (2) 一个线程执行完任务之后，不会立马被释放掉，而是先暂时缓存起来
 - (3) 当调度任务进入时，从缓存中取出一个线程进行处理
-- (4) 当然也应该进来的避免自己创建很多的 GCD Concurrent Queue 实例
 
-虽然不断的创建GCD Concurrent Queue实例，也是不断的创建线程，那么应该控制创建GCD Concurrent Queue实例的个数。
+所以，一个Concurrent Queue可能会创建`n个`子线程，所以应该也要避免随意的创建Concurrent Queue实例。
 
 但是一般情况下，使用`自己创建`的GCD Concurrent Queue场景很少，一般都是直接使用`dispatch_get_global_queue(long identifier, unsigned long flags);`获取系统的全局并发队列即可。
 
-所以，对于自己创建的 Concurrent Queue ，还是有必要控制实例化的个数。
-
-
 ### 对于 GCD Serial Queue:
 
-- (1) 一个Serial Queue新的实例，就相当于一个新的子线程
-- (2) 如果不断地创建 GCD Serial Queue 实例，就等同于不断的强制性创建新的子线程
-- (3) 那么这样一来，就完全绕过了线程池复用线程机制了，就有可能造成大量的线程创建，降低CPU的性能
+- (1) 一个Serial Queue新的实例，就相当于一个`新的子线程`
+- (2) 不断地创建 GCD Serial Queue 实例，就等同于不断的`创建新的子线程`
 
-所以对于自己创建的 GCD Serial Queue，其实例的创建个数，就很有必要进行控制了。
+这样就完全绕过了`线程池复用`机制了，压根就不会复用原来的线程，就有可能造成大量的线程创建，降低CPU的性能。
 
+所以，对于Serial Queue的创建，还是有必要进行限制。
 
-## 到底是缓存thread，还是缓存dispatch queue ？
+## 到底是缓存`NSThread对象`，还是缓存`dispatch_queue_t实例` ？
 
-那么，可以将创建出来的线程进行缓存，不用了就放回缓存，要用就拿出来，这是一个很好的办法，但是有个很重要的问题:
+### 直接对NSThread对象进行缓存是不行的，必须经过如下步骤:
+
+- (1) 给thread获取一个RunLoop
+- (2) 向RunLoop添加`RunLoop Source`
+- (3) 开启thread的runloop
+
+这样才能保证thread一直处于`executing`状态，后续也才能接受任务执行。
+
+### 现在基本上都是操作`dispatch_queue_t`，很少去操作`NSThread`、`pthread` ...
+
+对于`dispatch_queue_t`实例进行缓存，并不需要像缓存therad对象做那么多的处理。
+
+想用的时候取出`dispatch_queue_t`实例，只要往里面分配block就能够执行，并且GCD底层实现了thread池可以复用。
+
+### 使用例子测试缓存`dispatch_queue_t`是否可行
+
+用于缓存`dispatch_queue_t`实例的Context:
 
 ```
-到底是缓存thread，还是缓存dispatch queue ？
+// 保存dispatch_queue_t实例的容器
+struct dispatch_queue_context {
+    void **queues;
+};
+
+// 指针类型
+typedef struct dispatch_queue_context* dispatch_queue_context_t;
+
+// 全局context实例
+static struct dispatch_queue_context context;
 ```
 
-前面记录过，直接对NSThread对象进行缓存是不行的，还得手动添加source，并开启thread的runloop，这样才能保证thread一直处于`executing`状态，后续也才能接受任务执行。
+ViewController中初始化全局Context实例，然后从Context中获取queue使用：
 
-但是，对于现在的多线程基本上都是使用的`dispatch_queue_t`队列，而并不是赤裸裸直接使用NSThread、pthread...等等底层直接的线程。
+```objc
+@implementation ViewController
 
-而且，对于`dispatch_queue_t`实例进行缓存，并不需要像缓存therad对象做那么多的处理。想用的时候取出`dispatch_queue_t`实例，只要往里面分配block就能够执行，并且GCD底层实现了thread池可以复用。
+- (instancetype)initWithCoder:(NSCoder *)aDecoder {
+    if (self = [super initWithCoder:aDecoder]) {
+        [self setupContextQueues];
+    }
+    return self;
+}
 
-所以，可以直接针对`dispatch_queue_t`实例，会更方便也更高效。那么，我们就把一个`dispatch_queue_t`实例，看做成一个`thread`。
+- (instancetype)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
+    if (self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil]) {
+        [self setupContextQueues];
+    }
+    return self;
+}
+
+- (void)setupContextQueues {
+    
+    //1. 给context的queue数组分配内存
+    context.queues = malloc(sizeof(dispatch_queue_t) * 5);
+    
+    //2. 分别创建queue并填充数组
+    for (int i = 0; i < 5; i++) {
+        dispatch_queue_t queue = dispatch_queue_create("queue", NULL);
+        
+        //【重点】一定要retain一下queue，否则后续取出queue进行类型转换的时候会崩溃
+        context.queues[i] = (__bridge_retained void*)(queue);
+    }
+}
+
+- (void)test_dispatch_queue_context {
+    /**
+     *  从context中取出queue
+     */
+    
+    for (int i = 0; i < 5; i++) {
+        dispatch_queue_t queue = (__bridge dispatch_queue_t)(context.queues[i]);
+        dispatch_async(queue, ^{
+            NSThread *t = [NSThread currentThread];
+            NSLog(@"task %d, thread>>> isCanceled=%d, isExecuting=%d, isFinish=%d", i, t.isCancelled, t.isExecuting, t.isFinished);
+        });
+    }
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+	    [self test_dispatch_queue_context];
+}
+
+@end
+```
+
+输出结果
+
+```
+2017-02-22 21:44:41.408 Demo[2011:31446] task 1, thread>>> isCanceled=0, isExecuting=1, isFinish=0
+2017-02-22 21:44:41.408 Demo[2011:31445] task 0, thread>>> isCanceled=0, isExecuting=1, isFinish=0
+2017-02-22 21:44:41.408 Demo[2011:31556] task 3, thread>>> isCanceled=0, isExecuting=1, isFinish=0
+2017-02-22 21:44:41.408 Demo[2011:31447] task 2, thread>>> isCanceled=0, isExecuting=1, isFinish=0
+2017-02-22 21:44:41.408 Demo[2011:31557] task 4, thread>>> isCanceled=0, isExecuting=1, isFinish=0
+```
+
+可以看到，最终分配的线程状态一直是`isExecuting=1`，表明线程一直是存活的。
+
+所以可以直接针对`dispatch_queue_t`实例进行缓存，会更方便也更高效。就把一个`dispatch_queue_t`实例，看做成一个`thread`。
 
 ### 线程池中最大并发数量多少才会最好了？
 
@@ -135,71 +232,108 @@ http://chuansong.me/n/2769744
 最佳线程数目 = CPU总核数;
 ```
 
-也就是直接等于`CPU的总核心数`。但是从另外一篇文章中，得到这样的解释:
-
-> 对于计算密集型任务，当线程池大小为`CPU核心数 + 1`时，通常能实现最优的利用率。因为当计算密集型任务时，可能偶尔由于`页缺失`故障或者其他原因而暂停时，这个`额外的线程`就能够确保CPU的时钟周期不会被浪费。http://www.iteye.com/problems/95917。
-
-觉得还是有一定的道理的，所以我决定将预先缓存生成的`dispatch_queue_t`的个数设置为`CPU核心数 + 1`。
-
-YYDispatchQueuePool设置的是`CPU核心数`。
+也就是直接等于`CPU的总核心数`。
 
 ## 串行队列 和 并发队列，哪种类型需要进行缓存？
 
-一般来说，串行队列是为了某一个功能进行同步多线程处理的，就应该只针对某一个功能需求进行block任务调度，所以对于串行队列就不太适合做全局缓存，到处随便使用。
+### 第一种、单独完成某一块业务代码的多线程同步
 
-而我们平时使用的最多的队列就是global并发队列，但是global并发队列已经由系统创建完毕了，我们拿过来使用就行了。
+比如，网络请求数据的文件缓存，创建一个单例的queue实例，所有的请求缓存数据文件的读写操作，都必须在这个单例的queue上排队执行。
 
-那么可以看下，获取global队列时的情况:
+对于这种串行队列，就不太适合做全局的缓存队列，因为他只适用于这一个业务木块的同步代码逻辑。
+
+### 第二种、能够随机的取出一个队列来执行一个任务
+
+这种适合`随机`的一个任务进行调度，随机的从缓存中取出一个队列进行任务调度执行。
+
+比如，大量的CoreText、CoreGraphics等等任务代码，并不要求有`执行循序`，也不要求一定要在哪一个线程上执行。
+
+对于这种，只需要随机获取一个队列进行任务调度的操作，就需要一种随机获取队列的缓存。
+
+### 第三种、全局并发队列
+
+这种队列，开发者不能自己创建，就不考虑。
+
+## 结合线程最大并发数，设计`dispatch_queue_t`的缓存结构
+
+首先看到系统的`global concurrent dispatch queue` 全局并发队列，按照`dispatch queue priority`线程队列优先级，进行划分的结构。
+
+### 一种优先级下，只存在一个并发queue实例
 
 ```c
-- (1) high priority
-	- dispatch high priority queue 1
-- (2) default priority
-	- dispatch default priority queue 1
-- (3) low priority
-	- dispatch low priority queue 1
-- (4) backgroud priority
-	- dispatch backgroud priority queue 1
+- (1) High Priority
+	- dispatch high priority queue 实例1
+- (2) Default Priority
+	- dispatch default priority queue 实例1
+- (3) Low Priority
+	- dispatch low priority queue 实例1
+- (4) Backgroud Priority
+	- dispatch backgroud priority queue 实例1
 ```
 
-可以看到，每一种priority下，只有一个唯一的queue实例。
+可以看到，每一个优先级下，只存在一个并发队列实例。
 
-那么对前面讨论的`线程最大并发数`的问题，那么说处于某个priority下，同一个时刻只有一个queue实例进行block任务调度，那么其他的block任务可能必须等待前一次block任务入队完毕才能开始入队。
+试想一下，我有4个任务，需要在`Low Priority`下的queue实例进行任务调度。
 
-所以，可以将上面的结构改为如下:
+对于并发队列可以同时让多个线程执行任务。但是这个线程数不太好控制，有可能是2个，也可能是3个。
+
+总之，无法保证同时百分百的跑满4个线程。而CPU一般都有2到4个核心，每一个核心都能跑一个线程。而系统并发队列，无法总是跑满4个线程，所以很多时候都会让1个或2个核心处于休闲状态...
+
+### 一种优先级下，只存在`CPU核心数个`并发queue实例
 
 ```c
-- (1) high priority
-	- dispatch high priority queue 1
-	- dispatch high priority queue 2
-	- dispatch high priority queue 3
-	- dispatch high priority queue 4
-- (2) default priority
-	- dispatch default priority queue 1
-	- dispatch default priority queue 2
-	- dispatch default priority queue 3
-	- dispatch default priority queue 4
-- (3) low priority
-	- dispatch low priority queue 1
-	- dispatch low priority queue 2
-	- dispatch low priority queue 3
-	- dispatch low priority queue 4
-- (4) backgroud priority
-	- dispatch backgroud priority queue 1
-	- dispatch backgroud priority queue 2
-	- dispatch backgroud priority queue 3
-	- dispatch backgroud priority queue 4
+- (1) High Priority
+	- dispatch high priority queue 实例1
+	- dispatch high priority queue 实例2
+	- dispatch high priority queue 实例3
+	- dispatch high priority queue 实例4
+- (2) Default Priority
+	- dispatch default priority queue 实例1
+	- dispatch default priority queue 实例2
+	- dispatch default priority queue 实例3
+	- dispatch default priority queue 实例4
+- (3) Low Priority
+	- dispatch low priority queue 实例1
+	- dispatch low priority queue 实例2
+	- dispatch low priority queue 实例3
+	- dispatch low priority queue 实例4
+- (4) Backgroud Priority
+	- dispatch backgroud priority queue 实例1
+	- dispatch backgroud priority queue 实例2
+	- dispatch backgroud priority queue 实例3
+	- dispatch backgroud priority queue 实例4
 ```
 
-假设每个priority下都有4个queue实例，并且循环取出其中某一个queue实例，进行block任务入队调度。这样一来，调度的block的效率肯定会高很多。
+这样来说，虽然是可以保证绝对4个线程了。因为一个并发队列，至少产生一个线程。
 
-所以，综合来说，只应该对如下特点的queue进行缓存:
+但是，4个并发队列，产生的线程的有太多了。所以，需要将`并发`队列替换为`串行`队列，就刚好`4`个线程了，并且永远使用这4个线程。
 
-- (1) `并发`队列
-- (2) 适用于`全局`随便使用，即不针对某一个功能块
+OK，最终的结构如下，其中的queue都是`串行`的：
 
+```c
+- (1) High Priority
+	- dispatch high priority 串行 queue 实例1
+	- dispatch high priority 串行 queue 实例2
+	- dispatch high priority 串行 queue 实例3
+	- dispatch high priority 串行 queue 实例4
+- (2) Default Priority
+	- dispatch default priority 串行 queue 实例1
+	- dispatch default priority 串行 queue 实例2
+	- dispatch default priority 串行 queue 实例3
+	- dispatch default priority 串行 queue 实例4
+- (3) Low Priority
+	- dispatch low priority 串行 queue 实例1
+	- dispatch low priority 串行 queue 实例2
+	- dispatch low priority 串行 queue 实例3
+	- dispatch low priority 串行 queue 实例4
+- (4) Backgroud Priority
+	- dispatch backgroud priority 串行 queue 实例1
+	- dispatch backgroud priority 串行 queue 实例2
+	- dispatch backgroud priority 串行 queue 实例3
+	- dispatch backgroud priority 串行 queue 实例4
+```
 
-## `dispatch_get_global_queue();`苹果的注释
+## `dispatch_get_global_queue();`在iOS8之前与iOS8及之后，传入参数的区别
 
 ```c
 /*!
@@ -247,8 +381,17 @@ dispatch_queue_t dispatch_get_global_queue(long identifier, unsigned long flags)
 从注释中可以得到: 
 
 - 1) identifier参数，在iOS8以下与iOS8及以上时，传入的类型不同
-- 2) 苹果更推荐使用 `服务质量` 来描述线程，而不是 `优先级`
+- 2) 苹果更推荐使用 `quality of service`，代替`priority`
 
+那么这里，就引出一个问题，我们创建将要缓存的串行队列时，也有两种方法：
+
+- (1) priority
+- (2) quality of service
+
+那么，需要做一个系统版本兼容：
+
+- (1) iOS8之前，使用 priority
+- (2) iOS8及之后，使用 quality of service
 
 ### identifier参数，代表`两种`类型枚举值:
 	
@@ -264,7 +407,7 @@ a quality of service class defined in qos_class_t
 a priority defined in dispatch_queue_priority_t
 ```
 
-### 苹果更推荐使用 `服务质量` 来描述线程，而不是 `优先级`，原因是如下:
+### 苹果更推荐使用 `服务质量` 代替 `优先级`，原因是如下:
 
 | 队列描述（服务质量 or 优先级）| 最终执行线程描述 | 
 | :-------------: |:-------------:| 
@@ -347,16 +490,17 @@ typedef enum : unsigned int {
 	QOS_CLASS_USER_INITIATED = 0x19, //25，也是一些与UI相关的任务，但是对完成时间并不是需要一瞬间立刻完成，可以延迟一点点
 	QOS_CLASS_UTILITY = 0x11, //17，一些可能需要花点时间的任务，这些任务不需要马上返回结果，可能需要几分钟
 	QOS_CLASS_BACKGROUND = 0x09, //9，这些任务对用户不可见，比如后台进行备份的操作，执行时间可能很长
-	QOS_CLASS_DEFAULT = 0x15, // -1，当没有 QoS信息时默认使用，苹果建议不要使用这个级别
+	QOS_CLASS_DEFAULT = 0x15, // 21，当没有 QoS信息时默认使用，苹果建议不要使用这个级别
 	QOS_CLASS_UNSPECIFIED = 0x00,//0，这个是一个标记，没啥实际作用
 } qos_class_t;
 ```
 
-负数是以`补码`形式存放，而`补码 = -(最大正数 - 数值)`。所以十六进制数的`-1 == -(16 - 1) == 15 = 0x15`。
+`0x`表示十六进制数，转换十进制数的方法：
 
-也就是说，只有5种queue实例，多了一种`QOS_CLASS_USER_INTERACTIVE`的queue实例。
-
-可以看到，在iOS8之后推出的队列`服务质量`，可以指定更细腻的线程执行权限，肯定比基于`优先级`的方式好多了。服务质量，核心点在于对于`线程执行时间的长短`进行划分，可以控制的更细。
+```
+0x21 = 2*16^1 + 1*16^0 = 32 + 1 = 33
+0x200 = 2*16^2 + 0*16^1 + 0*16^0 = 512
+```
 
 ### 反映到最终NSThread上的参数
 
@@ -414,10 +558,38 @@ dispatch_async(USER_INTERACTIVE, ^{
 
 `USER_INTERACTIVE`和`USER_INITIATED`这两个队列的调度顺序谁先谁后都有可能，按照苹果注释来看，从理论来说应该是`USER_INTERACTIVE > USER_INITIATED`.
 
-然后还可以看到线程的`qualityOfService`值依次为: `33` `25` `-1` `17` `9` 刚好就是 `qos_class_t`中5个枚举值的十进制数值。
+这里很奇怪，不太明白为什么`DEFAULT task >>> thread quality = -1`。后来我发现对应的Foundation定义:
 
-从这里可以看到，使用`服务质量`来描述队列的调度级别绝对是比使用`优先级`描述好多了，因为最终子线程的执行级别的数值很清楚。不像`threadPriority`为 `0.5` `0.0` `0.2`...不能够很清楚理解有什么区别。
+```c
+typedef NS_ENUM(NSInteger, NSQualityOfService) {
+    NSQualityOfServiceUserInteractive = 0x21,
+    NSQualityOfServiceUserInitiated = 0x19,
+    NSQualityOfServiceUtility = 0x11,
+    NSQualityOfServiceBackground = 0x09,
+    NSQualityOfServiceDefault = -1
+}
+```
 
+里面定义的 qos default 就是`-1`，难道是以这个枚举值为标准的？
+
+```objc
+- (void)testQOS2 {
+    dispatch_queue_t DEFAULT1 = dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0);
+    dispatch_queue_t DEFAULT2 = dispatch_get_global_queue(NSQualityOfServiceDefault, 0);
+    NSLog(@"");
+}
+```
+
+输出结果
+
+```
+(OS_dispatch_queue_root *) DEFAULT1 = 0x0000000108722240
+(dispatch_queue_t) DEFAULT2 = nil
+```
+
+可是发现，`NSQualityOfServiceDefault`这个枚举值根本就获取不到queue实例，所以还是以`0x15`为qos default。
+
+从这里可以看到，使用`服务质量`来描述队列的调度级别绝对是比使用`优先级`描述好多了，不像`threadPriority`为 `0.5` `0.0` `0.2`，不能够很清楚理解有什么区别。
 
 
 ## `4种 dispatch queue priority` 与 `5种 QOS` 之间的关系
@@ -458,10 +630,9 @@ dispatch_async(USER_INTERACTIVE, ^{
 (OS_dispatch_queue_root *) PRIORITY_DEFAULT = 0x0000000105868240
 ```
 
-可以看到QOS中的`QOS_CLASS_USER_INTERACTIVE`获得的queue，在所有通过Priority获得的queue中，是无法对应的，而其他4种QOS获得queue都是能够对应的。
+可以看到QOS中的`QOS_CLASS_USER_INTERACTIVE`获得的queue，在所有通过Priority获得的queue中，是无法对应的。而其他4种QOS获得queue都是能够对应的。
 
 也就是说，iOS8之后，只有通过`QOS_CLASS_USER_INTERACTIVE`这个QOS才能获取得到这个queue实例。
-
 
 ## 两种类型下对于default队列有区别的:
 
@@ -500,47 +671,34 @@ but before any low priority queues have been scheduled.
 | `DISPATCH_QUEUE_PRIORITY_LOW` | `QOS_CLASS_UTILITY` |
 | `DISPATCH_QUEUE_PRIORITY_BACKGROUND` | `QOS_CLASS_BACKGROUND` |
 
-但是注意，其中的QOS是`QOS_CLASS_USER_INTERACTIVE`是iOS7及之前获取不到的。
+注意，其中`dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0);`，在`iOS8`之前获取不到实例的。
 
-### 统一使用QOS值，如果是iOS8以下系统，那么将QOS转换成Priority
+## 现在统一使用QOS操作队列，但是如果是iOS8以下系统，就需要将QOS转换成Priority
+
+自定义QOS的枚举类型，代替`iOS8`才能够使用的的`qos_class_t`
 
 ```c
-/**
- *  代替iOS8的qos_class_t
- */
 typedef NS_ENUM(NSInteger, XZHQualityOfService) {
     XZHQualityOfServiceUserInteractive          = 0x21,
     XZHQualityOfServiceUserInitiated            = 0x19,
     XZHQualityOfServiceUtility                  = 0x11,
     XZHQualityOfServiceBackground               = 0x09,
-    XZHQualityOfServiceDefault                  = 0x00,
+    XZHQualityOfServiceDefault                  = 0x15,
 };
 ```
 
+编写工具函数当系统是iOS8以下时，将`XZHQualityOfService`转换为对应的`dispatch_queue_priority_t`
+
 ```c
-static inline dispatch_queue_priority_t __XZHQualityOfServiceToPriority(XZHQualityOfService qos)
+static inline dispatch_queue_priority_t XZHQosToPriority(XZHQualityOfService qos)
 {
     switch (qos) {
-        case XZHQualityOfServiceUserInteractive: {
-            return DISPATCH_QUEUE_PRIORITY_HIGH;
-            break;
-        }
-        case XZHQualityOfServiceUserInitiated: {
-            return DISPATCH_QUEUE_PRIORITY_HIGH;
-            break;
-        }
-        case XZHQualityOfServiceUtility: {
-            return DISPATCH_QUEUE_PRIORITY_LOW;
-            break;
-        }
-        case XZHQualityOfServiceBackground: {
-            return DISPATCH_QUEUE_PRIORITY_BACKGROUND;
-            break;
-        }
-        case XZHQualityOfServiceDefault: {
-            return DISPATCH_QUEUE_PRIORITY_DEFAULT;
-            break;
-        }
+        case XZHQualityOfServiceUserInteractive: {return DISPATCH_QUEUE_PRIORITY_HIGH;}
+        case XZHQualityOfServiceUserInitiated: {return DISPATCH_QUEUE_PRIORITY_HIGH;}
+        case XZHQualityOfServiceUtility: {return DISPATCH_QUEUE_PRIORITY_LOW;}
+        case XZHQualityOfServiceBackground: {return DISPATCH_QUEUE_PRIORITY_BACKGROUND;}
+        case XZHQualityOfServiceDefault: {return DISPATCH_QUEUE_PRIORITY_DEFAULT;}
+        default: {return DISPATCH_QUEUE_PRIORITY_DEFAULT;}
     }
 }
 ```
@@ -587,28 +745,14 @@ static inline dispatch_queue_priority_t __XZHQualityOfServiceToPriority(XZHQuali
 ### 所以，最好是将 NSQualityOfService 转换成`qos_class_t`
 
 ```c
-static inline XZHQualityOfService __XZHQualityOfServiceFromNSQOS(NSQualityOfService qos) {
+static inline XZHQualityOfService XZHQosFromNSQos(NSQualityOfService qos) {
     switch (qos) {
-        case NSOperationQualityOfServiceUserInteractive: {
-            return XZHQualityOfServiceUserInteractive;
-            break;
-        }
-        case NSOperationQualityOfServiceUserInitiated: {
-            return XZHQualityOfServiceUserInitiated;
-            break;
-        }
-        case NSOperationQualityOfServiceUtility: {
-            return XZHQualityOfServiceUtility;
-            break;
-        }
-        case NSOperationQualityOfServiceBackground: {
-            return XZHQualityOfServiceBackground;
-            break;
-        }
-        case NSQualityOfServiceDefault: {
-            return XZHQualityOfServiceDefault;
-            break;
-        }
+        case NSQualityOfServiceUserInteractive: {return XZHQualityOfServiceUserInteractive;}
+        case NSQualityOfServiceUserInitiated: {return XZHQualityOfServiceUserInitiated;}
+        case NSQualityOfServiceUtility: {return XZHQualityOfServiceUtility;}
+        case NSQualityOfServiceBackground: {return XZHQualityOfServiceBackground;}
+        case NSQualityOfServiceDefault: {return XZHQualityOfServiceDefault;}
+        default: {return XZHQualityOfServiceBackground;}
     }
 }
 ```
@@ -618,14 +762,14 @@ static inline XZHQualityOfService __XZHQualityOfServiceFromNSQOS(NSQualityOfServ
 ### iOS8之前，给自己创建的队列设置优先级，需要从其他系统队列复制
 
 ```c
-//1. 指定一个long类型的优先级数值
-    dispatch_queue_priority_t identifier = DISPATCH_QUEUE_PRIORITY_DEFAULT;
+//1. 从哪一个系统队列进行优先级复制
+dispatch_queue_t source = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)
 
 //2. 先随便创建一个串行队列（没有指定队列优先级的）
 dispatch_queue_t queue = dispatch_queue_create("haha", DISPATCH_QUEUE_SERIAL);
 
 //3. 将dispatch_set_target_queue()函数中，第二个队列的优先级，复制给第一个队列
-dispatch_set_target_queue(queue, dispatch_get_global_queue(identifier, 0));
+dispatch_set_target_queue(queue, source);
 ```
 
 无法直接在创建队列时，指定队列的优先级，只能通过`dispatch_set_target_queue()`函数进行优先级复制。
@@ -638,10 +782,10 @@ dispatch_set_target_queue(queue, dispatch_get_global_queue(identifier, 0));
 //1. 服务质量
 qos_class_t qosClass = QOS_CLASS_DEFAULT;
 
-//2. 创建串行队列，并给队列指定服务质量
+//2. 使用服务质量，创建queue attr
 dispatch_queue_attr_t queue_attr = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, qosClass, -1);
 
-//3. 返回创建完毕的队列
+//3. 使用queue attr，创建queue
 dispatch_queue_t queue = dispatch_queue_create("haha", queue_attr);
 ```
 

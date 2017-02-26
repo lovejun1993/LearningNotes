@@ -728,12 +728,16 @@ userInfo = {
 ## 随机产生颜色
 
 ```
+@implementation UIColor (RandomColor)
+
 + (UIColor *)randomColor {
     CGFloat hue = ( arc4random() % 256 / 256.0 );  //  0.0 to 1.0
     CGFloat saturation = ( arc4random() % 128 / 256.0 ) + 0.5;  //  0.5 to 1.0, away from white
     CGFloat brightness = ( arc4random() % 128 / 256.0 ) + 0.5;  //  0.5 to 1.0, away from black
     return [UIColor colorWithHue:hue saturation:saturation brightness:brightness alpha:1];
 }
+
+@end
 ```
 
 ## CocoaPods spec 文件模板
@@ -1772,4 +1776,138 @@ NSArray *arr = @[@"1", @"2" , @"3", @"4"];
     }
     return self;
 }
+```
+
+## UISearchBar
+
+最近，在项目过程中遇到要自定义SearchBar的外观，虽然自己觉得用系统默认的外观就行了，不过UI设计师要求不用系统的默认样式，要跟app主题保持
+一致。
+
+图1：设计效果图
+从上图可以看出，我们要做的UISearchBar要有圆角，边框颜色，取消按钮颜色，背景透明等等。
+
+开始以为可能要自己写一个自定义的UISearchBar控件了，后面研究了一番，发现可以设定系统UISearchBar属性来更改，便把经验记录下来。
+
+首先，我们看下系统默认的SearchBar的样式，离我们的目标样式确实相差很大, 后面我会一步一步详细说明做成我们的目标样式。
+
+
+图2：UISearchBar默认样式
+1. 设置背景色
+我以白色的背景色为例，下面看看代码：
+
+//1. 设置背景颜色
+    //设置背景图是为了去掉上下黑线
+    self.customSearchBar.backgroundImage = [[UIImage alloc] init];
+    // 设置SearchBar的颜色主题为白色
+    self.customSearchBar.barTintColor = [UIColor whiteColor];
+
+图3：设置SearchBar背景色为白色
+2. 设置边框颜色和圆角
+//2. 设置圆角和边框颜色
+    UITextField *searchField = [self.customSearchBar valueForKey:@"searchField"];
+    if (searchField) {
+        [searchField setBackgroundColor:[UIColor whiteColor]];
+        searchField.layer.cornerRadius = 14.0f;
+        searchField.layer.borderColor = [UIColor colorWithRed:247/255.0 green:75/255.0 blue:31/255.0 alpha:1].CGColor;
+        searchField.layer.borderWidth = 1;
+        searchField.layer.masksToBounds = YES;
+    }
+这段代码有个特别的地方就是通过KVC获得到UISearchBar的私有变量
+searchField（类型为UITextField），设置SearchBar的边框颜色和圆角实际上也就变成了设置searchField的边框颜色和圆角，你可以试试直接设置SearchBar.layer.borderColor和cornerRadius，会发现这样做是有问题的。
+
+
+图4：设置边框颜色和圆角
+嗯，离预期效果越来越近了，有木有！
+
+3. 设置按钮（取消按钮）的文字和文字颜色
+//3. 设置按钮文字和颜色
+    [self.customSearchBar fm_setCancelButtonTitle:@"取消"];
+    self.customSearchBar.tintColor = [UIColor colorWithRed:86/255.0 green:179/255.0 blue:11/255.0 alpha:1];
+    //修正光标颜色
+    [searchField setTintColor:[UIColor blackColor]];
+
+//其中fm_setCancelButtonTitle是我写的UISearchBar一个分类的方法
+- (void)fm_setCancelButtonTitle:(NSString *)title {
+    if (IS_IOS9) {
+        [[UIBarButtonItem appearanceWhenContainedInInstancesOfClasses:@[[UISearchBar class]]] setTitle:title];
+    }else {
+        [[UIBarButtonItem appearanceWhenContainedIn:[UISearchBar class], nil] setTitle:title];
+    }
+}
+
+图5：设置按钮文字和颜色
+需要特别注意的是设置searchBar的tintColor会使输入框的光标颜色改变，可以通过设置searchField的tintColor来修正。
+
+4. 设置输入框的文字颜色和字体
+//4. 设置输入框文字颜色和字体
+    [self.customSearchBar fm_setTextColor:[UIColor blackColor]];
+    [self.customSearchBar fm_setTextFont:[UIFont systemFontOfSize:14]];
+
+//下面两个方法是UISearchBar分类代码
+- (void)fm_setTextColor:(UIColor *)textColor {
+    if (IS_IOS9) {
+        [UITextField appearanceWhenContainedInInstancesOfClasses:@[[UISearchBar class]]].textColor = textColor;
+    }else {
+        [[UITextField appearanceWhenContainedIn:[UISearchBar class], nil] setTextColor:textColor];
+    }
+}
+
+- (void)fm_setCancelButtonTitle:(NSString *)title {
+    if (IS_IOS9) {
+        [[UIBarButtonItem appearanceWhenContainedInInstancesOfClasses:@[[UISearchBar class]]] setTitle:title];
+    }else {
+        [[UIBarButtonItem appearanceWhenContainedIn:[UISearchBar class], nil] setTitle:title];
+    }
+}
+
+图6：最终对比效果图
+5. 如何设置搜索图标
+下面评论中有简友问我怎么更改默认的搜索图标，我查了下UISearchBar的API，发现有方法可以更改的。
+
+//5. 设置搜索Icon
+    [self.customSearchBar setImage:[UIImage imageNamed:@"Search_Icon"]
+                  forSearchBarIcon:UISearchBarIconSearch
+                             state:UIControlStateNormal];
+为了跟系统默认Icon的有个明显的对比，我特殊找了张绿色的搜索Icon，效果见下图：
+
+
+设置搜索Icon.png
+Tips: 还可以设置其他的Icon（如清除按钮图标），也是用上面的方法，具体要设置什么，可以去看看UISearchBarIcon这个枚举。
+
+最后，介绍下QQ的搜索样式的实现
+
+图7：类似QQ搜索框样式
+很简单，在storyboard中设置searchBar的Bar Style为Minimal，或者用代码设置 ：
+
+//设置类似QQ搜索框
+    self.minimalSearchBar.searchBarStyle = UISearchBarStyleMinimal;
+完整代码在这里。
+
+
+http://www.cnblogs.com/Camier-myNiuer/p/5803305.html
+
+## 读取framework内部的资源文件
+
+```objc
+@interface UIImage (NVMRetailModule)
++ (UIImage *)nvm_imageNamedInNVMRetail:(NSString *)imageName;
+@end
+@implementation UIImage (NVMRetailModule)
++ (UIImage *)nvm_imageNamedInNVMRetail:(NSString *)imageName {
+    static NSBundle *NVMRetailModuleBundle = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+    
+    	//1. 随便读取一个该framework库中的objc类文件，目的得到了这个framework的根目录路径
+        NSBundle *bundle = [NSBundle bundleForClass:[NVMRetailModuleManager class]];
+        
+        //2. 在获取得到framework的根目录下的 xxx.bundle 的路径
+        NSString *bundlePath = [[bundle bundlePath] stringByAppendingPathComponent:@"/NVMRetailModule.bundle"];
+        
+        //3. 构造获取 xxx.bundle 的 NSBundle对象
+        NVMRetailModuleBundle = [NSBundle bundleWithPath:bundlePath];
+    });
+    return [UIImage imageNamed:imageName inBundle:NVMRetailModuleBundle compatibleWithTraitCollection:nil];
+}
+@end
 ```
