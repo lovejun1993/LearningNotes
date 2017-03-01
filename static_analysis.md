@@ -219,6 +219,24 @@ infer -o /tmp/out -- javac Test.java
 
 ## xcodebuild命令基础概念
 
+### workspace、project、scheme、target的关系
+
+```
+- workspace
+	- Project 1
+		- <scheme 1 : target 1>
+		- <scheme 2 : target 2>
+		- <scheme 3 : target 3>
+	- Project 2
+		- <scheme 1 : target 1>
+		- <scheme 2 : target 2>
+		- <scheme 3 : target 3>
+	- Project 3
+		- <scheme 1 : target 1>
+		- <scheme 2 : target 2>
+		- <scheme 3 : target 3>
+```
+
 ### Workspace
 
 简单来说，Workspace就是一个容器，在该容器中可以存放多个你创建的Xcode Project， 以及其他的项目中需要使用到的文件。   
