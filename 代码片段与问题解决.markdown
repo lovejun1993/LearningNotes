@@ -1279,7 +1279,7 @@ NSString *token = [[[_deviceTokenData description]
                        withString:@""];
 ```
 
-## UIButton内部subviews，图片左边，文字右边.
+## UIButton 文字靠左，图片靠右
 
 ```objc
 @interface ZSYCustomeButton : UIButton
@@ -1909,5 +1909,122 @@ http://www.cnblogs.com/Camier-myNiuer/p/5803305.html
     });
     return [UIImage imageNamed:imageName inBundle:NVMRetailModuleBundle compatibleWithTraitCollection:nil];
 }
+@end
+```
+
+## 九宫格
+
+```objc
+NSInteger col = 3;
+CGFloat productOriginY = CGRectGetMaxY(_adverMessageFrame) + itemVerticalMargin;
+CGFloat productWidth = (screenWidth - 2 * leftMargin) / col;
+CGFloat productHeight = productWidth;
+CGFloat productHorMargin = (screenWidth - col * productWidth) / (col + 1);
+    
+CGRect lastRect = CGRectZero;
+NSMutableArray *productsFrame = [[NSMutableArray alloc] initWithCapacity:_products.count];
+for (int i = 0; i < _products.count; i++) {
+//        NVMRetailBottomContainerViewCellProductModel *prod = [_products objectAtIndex:i];
+    CGFloat x = (i % col) * productWidth + productHorMargin * (i % col + 1);
+    CGFloat y = productOriginY + (i / col) * (productHeight + productHorMargin);
+    lastRect = CGRectMake(x, y, productWidth, productHeight);
+    [productsFrame addObject:[NSValue valueWithCGRect:lastRect]];
+}
+_productFrames = [productsFrame copy];
+```
+
+## 循环利用subviews
+
+```objc
+@interface NVMRetailBottomContainerViewCell : UITableViewCell {
+	NSMutableArray *_productViews;
+	}
+@end
+@implementation NVMRetailBottomContainerViewCell
+
+- (void)reloadWithModel:(NVMRetailBottomContainerViewCellModel *)model {
+    _model = model;
+
+    _titleLabel.text = model.title;
+    _arriveLabel.text = @"准时到达";
+    _fengNiaoLabel.text = @"蜂鸟配送";
+    _moneyStartLabel.text = model.moneyStart;
+    _deliveryLabel.text = model.deliveryMessage;
+    _distanceLabel.text = model.distance;
+    _timeLabel.text = model.time;
+    _adLabel.text = model.adverMessage;
+
+    // 重用当前cell->_productViews
+    if (_productViews.count == 0) {
+        for (NSInteger  i = 0; i < model.products.count; i++) {
+            NVMRetailBottomContainerViewCellProductView *prod = [[NVMRetailBottomContainerViewCellProductView alloc] initWithFrame:CGRectZero];
+            prod.tag = i;
+            [prod addTarget:self action:@selector(_didClickProductItemView:) forControlEvents:UIControlEventTouchUpInside];
+            [self addSubview:prod];
+            [_productViews addObject:prod];
+        }
+    } else {
+        if (_productViews.count < model.products.count) {
+            for (NSInteger  i = _productViews.count; i < model.products.count; i++) {
+                NVMRetailBottomContainerViewCellProductView *prod = [[NVMRetailBottomContainerViewCellProductView alloc] initWithFrame:CGRectZero];
+                prod.tag = i;
+                [prod addTarget:self action:@selector(_didClickProductItemView:) forControlEvents:UIControlEventTouchUpInside];
+                [self addSubview:prod];
+                [_productViews addObject:prod];
+            }
+        } else  if (_productViews.count > model.products.count) {
+            for (NSInteger i = model.products.count; i < _productViews.count; i++) {
+                NVMRetailBottomContainerViewCellProductView *prod = [_productViews objectAtIndex:i];
+                prod.hidden = YES;
+            }
+        }
+    }
+    
+    [self setNeedsLayout];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    
+    _titleLabel.frame = _model.titleFrame;
+    _arriveLabel.frame = _model.arriveFrame;
+    _fengNiaoLabel.frame = _model.fengNiaoDeliveryFrame;
+    _moneyStartLabel.frame = _model.moneyStartFrame;
+    _deliveryLabel.frame = _model.deliveryMessageFrame;
+    _distanceLabel.frame = _model.distanceFrame;
+    _timeLabel.frame = _model.timeFrame;
+    _adImageView.frame = _model.iconFrame;
+    _adLabel.frame = _model.adverMessageFrame;
+    
+    // 重用当前cell->_productViews
+    for (NSInteger i = 0; i < _model.products.count; i++) {
+        NVMRetailBottomContainerViewCellProductView *prod = [_productViews objectAtIndex:i];
+        prod.hidden = NO;
+        NSValue *frameValue = [_model.productFrames objectAtIndex:i];
+        prod.frame = [frameValue CGRectValue];
+        [prod reloadWithModel:[_model.products objectAtIndex:i]];
+    }
+    
+    _bottomLine.frame = _model.bottomLineFrame;
+}
+```
+
+## UIButton 扩大事件响应区域
+
+```objc
+@implementation NVMBreakfastLargeButton
+
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent*)event
+{
+    CGRect bounds = self.bounds;
+    //若原热区小于44x44，则放大热区，否则保持原大小不变
+    CGFloat widthDelta = MAX(44.0 - bounds.size.width, 0);
+    CGFloat heightDelta = MAX(44.0 - bounds.size.height, 0);
+    bounds = CGRectInset(bounds, -0.5 * widthDelta, -0.5 * heightDelta);
+    return CGRectContainsPoint(bounds, point);
+}
+
+
 @end
 ```
