@@ -45,6 +45,104 @@ sendAction:to:forEvent:
 
 可以通过替换SEL指向的IMP，来拦截这两个负责发送UI事件的方法实现，来做一些额外的处理。
 
+### 当遇到`多种选择条件`时，要尽量使用`查表`法实现
+
+比如 switch/case，C Array，如果查表条件是对象，则可以用 NSDictionary 来实现。
+
+比如，如下很多的`if-elseif`的判断语句:
+
+```objc
+NSString *name = @"XIONG";
+    
+if ([name isEqualToString:@"XIAOMING"]) {
+    NSLog(@"task 1");
+} else if ([name isEqualToString:@"LINING"]) {
+    NSLog(@"task 2");
+} else if ([name isEqualToString:@"MAHANG"]) {
+    NSLog(@"task 3");
+} else if ([name isEqualToString:@"YHAHA"]) {
+    NSLog(@"task 4");
+}
+```
+
+使用`NSDictionary+Block`来封装`条件 : 执行路径`:
+
+```objc
+NSDictionary *map = @{
+                      @"XIONG1" : ^() {NSLog(@"task 1");},
+                      @"XIONG2" : ^() {NSLog(@"task 2");},
+                      @"XIONG3" : ^() {NSLog(@"task 3");},
+                      @"XIONG4" : ^() {NSLog(@"task 4");},
+                      };
+
+void (^block)(void) = [map objectForKey:name];
+block();
+```
+
+查表属于hash算法，在`非常多的if-elseif`判断语句时，效率会提升很多的。
+
+但是，如果`key值`都很相似，这个时候就会造成每一次都是从hash表从头到尾遍历冲突，找到下一个，这样效率也很差的，比如:
+
+```objc
+NSDictionary *map = @{
+                      @"nil" : @1,
+                      @"nIl" : @1,
+                      @"niL" : @1,
+                      @"Nil" : @1,
+                      @"NIL" : @1,
+                      @"NIl" : @1,
+                      };
+```
+
+所有的key值都太相似了，那么这种情况下，给一个key值查表时，几乎都是循环挨个遍历。
+
+## `直接操作Ivar > getter/setter > KVC`
+
+Key-Value Coding 使用起来非常方便，但性能上要差于直接调用 Getter/Setter，所以如果能避免 KVC 而用 Getter/Setter 代替，性能会有较大提升。
+
+KVC首先根据`setValue:forKey:`传入的key，查找到对应的`Ivar`，这个过程就已经有一点复杂了。
+
+并且，KVC对于基本数据类型（int、float、double、long、NSInteger..）都会自动封装为NSNumber，而这个对于直接调用getter/setter时，是不必要的步骤。
+
+
+通过`调用getter/setter`的方式进行Ivar值存取时，虽然是比KVC稍微好一点，但仍然需要走`objc的消息传递`的过程。
+
+但是直接通过获取得到Iavr，直接对Ivar进行值的存取会更快:
+
+```objc
+@interface Dog : NSObject
+@property (nonatomic, copy) NSString *name;
+@end
+@implementation Dog
+@end
+```
+
+```objc
+- (void)test {
+    
+    // Ivar的名字默认都是以为下划线开始的，eg： _name、_age ...
+    Ivar ivar = class_getInstanceVariable([Dog class], "_name");
+    
+    Dog *dog = [Dog new];
+    object_setIvar(dog, ivar, @"我是你妈");
+    
+    NSLog(@"name = %@", dog.name);
+
+}
+```
+
+除了第一步查找Ivar之外，后面都是直接绕过了objc的消息传递过程，直接对Ivar进行存取。
+
+## 使用`__unsafe_unretained`来修饰指向`必定不会被废弃`的对象的指针变量，不会由ARC系统附加做retain/release的处理，提高了运行速度
+
+- (1) 使用`__weak`修饰的指针变量指向的对象时，会将被指向的对象，自动注册到自动释放池，防止使用的时候被废弃，但是影响了代码执行效率
+
+- (2) 如果一个对象确定是不会被废弃，或者调用完成之前不会被废弃，就使用`__unsafe_unretained`来修饰指针变量
+
+- (3) `__unsafe_unretained`就是简单的拷贝`地址`，不进行任何的`对象内存管理`，即不修改retainCount
+
+
+
 ## 异步子线程完成图像绘制
 
 ```c
@@ -66,6 +164,96 @@ sendAction:to:forEvent:
 ```
 
 先子线程完成图像的绘制渲染，最后回到主线程设置处理后的图像。
+
+## 对 `Array/Set/Dic` 容器对象进行遍历的时候，转为CoreFoundation容器对象，再进行遍历，效率会更高
+
+通常对于Foundation的写法:
+
+```objc
+//1.
+NSDictionary *map = @{
+                      @"key1" : @"value1",
+                      @"key2" : @"value2",
+                      @"key3" : @"value3",
+                      @"key4" : @"value3",
+                      };
+
+//2. 每一次遍历都传入进行使用的公共数据
+NSMutableString *info = [[NSMutableString alloc] init];
+
+//3. 遍历容器，取出key、value、保存到公共数据中
+[map enumerateKeysAndObjectsUsingBlock:^(NSString*  _Nonnull key, NSString*  _Nonnull obj, BOOL * _Nonnull stop)
+{
+    [info appendFormat:@"%@=%@", key, obj];
+}];
+
+NSLog(@"info = %@", info);
+```
+
+转换为CoreFoundation的写法，分为三部曲:
+
+```c
+// 定义每一次CF遍历回调c函数中使用的公共内存数据Context
+struct Context {
+    void *info;    //注意：c struct中不能定义objc对象类型
+};
+```
+
+```c
+// 每一次CF遍历回调的c函数实现
+void XZHCFDictionaryApplierFunction(const void *key, const void *value, void *context) {
+    //1.
+    struct Context *ctx = (struct Context *)context;
+    
+    //2.
+    NSMutableString *info = (__bridge NSMutableString*)(ctx->info);
+    
+    //3.
+    NSString *key_ = (__bridge NSString*)(key);
+    NSString *value_ = (__bridge NSString*)(value);
+    
+    //4.
+    [info appendFormat:@"%@=%@", key_, value_];
+}
+```
+
+```objc
+// objc对象中转换为CF容器遍历
+@implementation ViewController
+
+- (void)test {
+    
+    //1.
+    NSDictionary *map = @{
+                          @"key1" : @"value1",
+                          @"key2" : @"value2",
+                          @"key3" : @"value3",
+                          @"key4" : @"value3",
+                          };
+
+    //2. 每一次遍历都传入进行使用的公共数据
+    NSMutableString *info = [[NSMutableString alloc] init];
+    
+    
+    //3. 创建一个栈Context实例
+    struct Context ctx = {0};
+    
+    //4. Context实例，包装每一次遍历函数中都要操作的objc对象数据
+    ctx.info = (__bridge void*)(info);
+
+    //5. 遍历容器，取出key、value、保存到公共数据中
+    CFDictionaryApplyFunction((CFDictionaryRef)map , XZHCFDictionaryApplierFunction, &ctx);
+
+    //6.
+    NSLog(@"info = %@", info);
+}
+
+@end
+```
+
+效果与之前Foundation的一致，但是可以看到，使用CF容器遍历时，需要进行编写用于每次传入`CFDictionaryApplyFunction()`中回调c函数的一个`Context`结构体，并且需要对该Context结构体实例进行不断的存取。
+
+但是总体CF容器遍历的效率绝对比Foundation容器遍历高，因为省去了objc消息传递等很多步骤，直接就是c函数调用完成的。
 
 ## 将一些不太重要的代码放在 `idle（空闲）` 时去执行
 
@@ -429,16 +617,6 @@ ViewController测试异步释放数组对象
 所以也就是活，线程与对象是没有啥关系的，任意的对象可以在任意的线程上进行创建与释放，但是除开`UIKit`对象。
 
 但是(2)不合常理，会影响主线程的执行效率，所以不推荐。
-
-## 使用 `__unsafe_unretained`来修饰指针变量，不要滥用`__weak`会导致对象自动注册到自动释放池，从而影响运行速度
-
-- (1) 如果一个对象确定是不会被废弃，或者调用完成之前不会被废弃
-
-- (2) 那么，声明一个指向该对象的指针变量时，就是要`__unsafe_unretained`来修饰
-
-- (3) `__unsafe_unretained`就是简单的拷贝`地址`，不进行任何的`对象内存管理`
-    - 即不修改retainCount
-
 
 ## struct实例去持有 Foundation对象，当struct实例废弃时，要让Foundation对象在子线程上异步释放废弃
 
