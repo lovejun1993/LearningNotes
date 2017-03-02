@@ -1,32 +1,180 @@
 
-## 苹果开源代码
-
-```
-https://opensource.apple.com/tarballs/CF/
-https://github.com/opensource-apple/CF
-https://github.com/opensource-apple/objc4
-```
-
-## 记录下苹果文档查询的路径:
-
-```
-https://developer.apple.com/search/?q=
-```
-
 ## 最好不要在load方法中写过多耗时的代码
 
 因为App启动时，会等待所有objc类的load方法实现全部执行完，才会走后面的代码逻辑。
 
-## 一段代码执行时间计算
+## YYMemoryCache中在子线程释放废弃对象的`三部曲`
+
+```objc
+- (void)removeAll {
+    _totalCost = 0;
+    _totalCount = 0;
+    _head = nil;
+    _tail = nil;
+    
+    if (CFDictionaryGetCount(_nodeMap) > 0) {
+        
+        //第一步、增加一个局部指向，dic.retainCount = 2
+        CFMutableDictionaryRef holder = _nodeMap;
+        
+        //第二步、让之前的指针指向新创建的对象，dic.retainCount = 1
+        _nodeMap = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        
+        /**
+         *  所有的node缓存节点内存释放与废弃，包含两种逻辑:
+         *  - (1) 异步释放与废弃
+         *      - 主线程完成
+         *      - 子线程完成
+         *  - (2) 同步释放与废弃
+         *      - 当前创建node对象的所在线程（node对象的创建基本上都处于主线程）
+         */
+        
+        //第三步、让此时retainCount==1的dic对象的释放废弃流程异步走到子线程中完成
+        if (_releaseAsynchronously) {
+            if (_releaseOnMainThread && !pthread_main_np()) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    CFRelease(holder);//最终在主线程， dic.retainCount = 0
+                });
+            } else {
+                dispatch_queue_t queue = _releaseOnMainThread ? dispatch_get_main_queue() : XZHMemoryCacheGetReleaseQueue();
+                dispatch_async(queue, ^{
+                    CFRelease(holder);//最终在子线程，dic.retainCount = 0
+                });
+            }
+        } else {
+            CFRelease(holder);//最终在执行removeAll所在线程，dic.retainCount = 0
+        }
+    }
+}
+```
+
+通常是在子线程创建大体积对象，然后回调主线程使用。或者将主线程上不再使用的对象，异步放到子线程完成释放废弃。
+
+- (1) 主线程创建对象 >>> 子线程异步释放与废弃
+- (1) 子线程创建对象（读取文件为对象） >>> 主线程使用完毕 >>> 主线程异步释放与废弃
+
+(1)、(2)的做法都是正确的。因为:
+
+```
+一个对象 >>> 一个内存块。
+一个线程 >>> 一个代码执行路径。
+```
+
+那么任意的代码执行路径，都能够访问到某一块内存块，所以任意的线程是能够操作内存中任意的内存块数据。
+
+但是`(2)`不太合常理，会影响主线程的执行效率，所以不推荐。
+
+
+## KVO的大致实现总结
+
+- (1) 当一个对象的属性添加了属性观察者之后，这个`对象的 isa指针`会被修改
+
+- (2) 由runtime在运行时创建出一个对象所属类的一个子类，名字的格式是`NSKVONotifying_原始类名`
+
+- (3) 重写原来父类中被观察属性property的setter方法实现
+
+```objc
+- (void)setType:(NSSting *)type {
+
+	//1. 调用父类Cat设置属性值的方法实现
+	[super setType:type];
+	
+	//2. 通知Cat对象的观察者执行回调（从断点效果看是同步执行的）
+	[cat对象的观察者 observeValueForKeyPath:@"type"  ofObject:self  change:@{}  context:nil];
+}
+```
+
+- (4) 对象的 isa指针，由runtime系统替换指向为第二步中创建的中间类`NSKVONotifying_原始类名`
+
+- (5) 当对象的被观察属性值发生改变时（中间类的setter方法实现被调用），就会回调执行观察者的`observeValueForKeyPath: ofObject:change:context:`方法实现。并且是同步调用的。
+
+- (6) 如下两个方法的返回的objc_class结构体实例是`不同`的
+
+```
+object_getClass(被观察者对象) >>> 返回的是替换后的`中间类`
+```
+
+```
+[被观察对象 class] >>> 仍然然会之前的`原始类`
+```
+
+- (7) 当对象移除属性观察者之后，该`对象的isa指针`又会`恢复`指向为`原始类`
+
+
+## `objc_msgSend()` 函数类型转换的格式
+
+```
+((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
+```
+
+在`c/c++`下，函数指针强转的格式：
 
 ```c
-int count = 100000;
-double date_s = CFAbsoluteTimeGetCurrent();
+#include <iostream>
+using namespace std;
 
-......
+//1. 
+void work(void *self, char *sel) {
+    
+}
 
-double date_current = CFAbsoluteTimeGetCurrent() - date_s;
-NSLog(@"consumeTime: %f μs",date_current * 11000 * 1000);
+//2.
+int work(void *self, char *sel ,int x) {
+    return 1;
+}
+
+//3.
+bool work(void *self, char *sel ,int x, int y) {
+    return true;
+}
+
+//4.
+string work(void *self, char *sel ,int x, int y, int z) {
+        return string("Hello world~!!");
+}
+```
+
+如上4个c++重载函数的函数指针类型如下：
+
+```c
+返回值类型 (*类型名字)(函数的参数列表)
+
+//1. 
+void    (*funcP1)(void *self, char *sel);
+
+//2.
+int     (*funcP2)(void *self, char *sel ,int x);
+
+//3.
+bool    (*funcP3)(void *self, char *sel ,int x, int y);
+
+//4.
+string  (*funcP4)(void *self, char *sel ,int x, int y, int z);
+```
+
+通过一个函数的指针变量，调用指向的函数:
+
+```c
+void test() {
+    
+    void *ptr = NULL;
+    char sel[] = "sel";
+    
+    // (返回值类型 (*)(函数的参数列表)函数指针变量)(传递给方法的形参列表)；
+    
+    //1.
+    ((void (*)(void *, char *))work)(ptr, sel);
+    
+    //2.
+    int ret1 = ((int (*)(void *, char *, int))work)(ptr, sel, 19);
+    
+    //3.
+    bool ret2 = ((bool (*)(void *, char *, int, int))work)(ptr, sel, 19, 20);
+    
+    //4.
+    string ret3 = ((string (*)(void *, char *, int, int, int))work)(ptr, sel, 19, 20, 21);
+    
+}
 ```
 
 ## sendAction 发送UIEvent事件
@@ -45,7 +193,7 @@ sendAction:to:forEvent:
 
 可以通过替换SEL指向的IMP，来拦截这两个负责发送UI事件的方法实现，来做一些额外的处理。
 
-### 当遇到`多种选择条件`时，要尽量使用`查表`法实现
+## 当遇到`多种选择条件`时，要尽量使用`查表`法实现
 
 比如 switch/case，C Array，如果查表条件是对象，则可以用 NSDictionary 来实现。
 
@@ -96,6 +244,44 @@ NSDictionary *map = @{
 
 所有的key值都太相似了，那么这种情况下，给一个key值查表时，几乎都是循环挨个遍历。
 
+## objc对象、objc类、meta类、super 之间`isa`指针与`super_class`指针的指向关系
+
+<img src="./runtime1.jpeg" alt="" title="" width="700"/>
+
+<img src="./runtime2.png" alt="" title="" width="700"/>
+
+## 我们编写的NSObject类，在程序运行时加载的过程
+
+```c
+//1. 创建一个运行时识别的Class
+objc_allocateClassPair(Class superclass, 
+					   const char *name, 
+					   size_t extraBytes);
+
+//2. 添加实例变量
+BOOL class_addIvar(Class cls, 
+				   const char *name, 
+				   size_t size, 
+				   uint8_t alignment,
+				    const char *types);
+
+//3. 添加实例方法
+BOOL class_addMethod(Class cls, 
+					 SEL name, 
+					 IMP imp, 
+					 const char *types);
+					 
+//4. 添加实现的协议
+BOOL class_addProtocol(Class cls, Protocol *protocol);
+
+//5. 将处理完毕的Class注册到运行时系统，之后就无法再对其修改Ivar
+void objc_registerClassPair(Class cls);
+```
+
+当执行完最后一步`objc_registerClassPair(Class cls)`，就会进行Ivar的内存布局计算了，之后就无法再改变了。
+
+所以这就是为什么之前给Cat类添加Ivar不成功的原因。
+
 ## `直接操作Ivar > getter/setter > KVC`
 
 Key-Value Coding 使用起来非常方便，但性能上要差于直接调用 Getter/Setter，所以如果能避免 KVC 而用 Getter/Setter 代替，性能会有较大提升。
@@ -141,30 +327,7 @@ KVC首先根据`setValue:forKey:`传入的key，查找到对应的`Ivar`，这�
 
 - (3) `__unsafe_unretained`就是简单的拷贝`地址`，不进行任何的`对象内存管理`，即不修改retainCount
 
-
-## 异步子线程完成图像绘制
-
-```c
-- (void)display {
-
-	//1. 
-    dispatch_async(backgroundQueue, ^{
-        CGContextRef ctx = CGBitmapContextCreate(...);
-        // draw in context...
-        CGImageRef img = CGBitmapContextCreateImage(ctx);
-        CFRelease(ctx);
-        
-        //2.
-        dispatch_async(mainQueue, ^{
-            layer.contents = img;
-        });
-    });
-}
-```
-
-先子线程完成图像的绘制渲染，最后回到主线程设置处理后的图像。
-
-## 对 `Array/Set/Dic` 容器对象进行遍历的时候，转为CoreFoundation容器对象，再进行遍历，效率会更高
+## 对 `NSArray/NSSet/NSDictionary` 容器对象进行遍历的时候，转为CoreFoundation容器对象，再进行遍历，效率会更高。这也是struct作为Context的一个应用场景。
 
 通常对于Foundation的写法:
 
@@ -254,6 +417,110 @@ void XZHCFDictionaryApplierFunction(const void *key, const void *value, void *co
 
 但是总体CF容器遍历的效率绝对比Foundation容器遍历高，因为省去了objc消息传递等很多步骤，直接就是c函数调用完成的。
 
+## struct应用场景2、作为多个参数的打包器Context
+
+
+分为：方法获取参数集合、方法回传参数集合
+
+```c
+typedef struct Context {
+    int     arg1;
+    char    *arg2;
+    float   arg3;
+    void    *arg4;
+}Context;
+```
+
+```c
+void func6(Context *ctx) {
+    
+    //1. 从Context实例获取所有的参数
+    int     arg1 = ctx->arg1;
+    char    *arg2 = ctx->arg2;
+    float   arg3 = ctx->arg3;
+    void    *arg4 = ctx->arg4;
+    
+    //2. 操作所有的参数处理
+}
+
+void func7(int x, Context *ctx) {
+    char a[] = "hahaha";
+    
+    // 将处理后的参数，设置到ctx回传出去
+    ctx->arg1 = 1;
+    ctx->arg2 = a;
+    ctx->arg3 = 19.23;
+    ctx->arg4 = (void*)"haha";
+    
+}
+```
+
+## struct应用场景3、位段结构体
+
+格式
+
+```c
+struct __touchDelegate {
+    
+    //格式:
+    变量类型 成员名 : 分配的长度;
+    
+    //例子: 通常分配一个二进制位就可以了，表示0与1即可
+    unsigned int touchBegin : 1;
+};
+```
+
+objc中的delegate的定义
+
+```objc
+@protocol TouchDelegate : NSObject
+
+- (void)touchBegin;
+- (void)touchMoved;
+- (void)touchEnd;
+
+@end
+```
+
+对应的位段结构体如下
+
+```c
+struct __touchDelegate {
+    unsigned int touchBegin : 1;
+    unsigned int touchMoved : 1;
+    unsigned int touchEnd   : 1;
+};
+```
+
+在设置delegate时，填充这个位段结构体实例
+
+
+```objc
+- (void)setDelegate:(id<TouchDelegate>)delegate {
+    _delegate = delegate;
+    
+    if ([delegate respondsToSelector:@selector(touchBegin)]) {
+        __touchDelegate.touchBegin = 1;
+    }
+    
+    if ([delegate respondsToSelector:@selector(touchMoved)]) {
+        __touchDelegate.touchMoved = 1;
+    }
+    
+    if ([delegate respondsToSelector:@selector(touchEnd)]) {
+        __touchDelegate.touchEnd = 1;
+    }
+}
+```
+
+后后面只需要根据位段结构体实例的对应成员变量值是0还是1，就可以判断是否实现了协议方法。
+
+## objc对象的成员变量的内存布局
+
+```
+objc对象的成员变量的内存布局.md
+```
+
 ## 将一些不太重要的代码放在 `idle（空闲）` 时去执行
 
 ```objc
@@ -310,6 +577,45 @@ void XZHCFDictionaryApplierFunction(const void *key, const void *value, void *co
 }
 ```
 
+## 在线程的runloop添加2个Observer，用来给线程永远保持一个最新鲜的释放池
+
+```c
+static void XZHCFRunLoopObserverCallBack(CFRunLoopObserverRef observer, CFRunLoopActivity activity, void *context)
+{
+	// 根据当前runloop的状态进行不同的操作
+    switch (activity) {
+            
+        //状态一、runloop即将进入
+        case kCFRunLoopEntry: {
+            XZHAutoreleasePoolPush();// 直接创建新的释放池
+        }
+            break;
+            
+        //状态二、runloop即将休眠
+        case kCFRunLoopBeforeWaiting: {
+            XZHAutoreleasePoolPop();// 先废弃老的释放池
+            XZHAutoreleasePoolPush();// 再创建新的释放池
+        }
+            break;
+            
+        //状态三、runloop即将退出
+        case kCFRunLoopExit: {
+            XZHAutoreleasePoolPop();// 直接释放老的释放池
+        }
+            break;
+            
+        default:
+            break;
+    }
+}
+```
+
+从上面的逻辑可以看出，主要是三种状态：
+
+- (1) runloop即将进入，也就是runloop的第一次初始化的时候
+- (2) runloop即将睡眠，就是处理完当前所有的source了，已经没有其他事情了
+- (3) runloop即将退出
+
 ## 对象关联时所有内存管理策略
 
 | 关联对象指定的内存策略 | 等效的OC对象内存管理修饰符  | 
@@ -322,7 +628,7 @@ void XZHCFDictionaryApplierFunction(const void *key, const void *value, void *co
 
 没有指定`nonatomic`，默认就是`atomic`原子属性同步多线程。
 
-## 如果一个方法在一个循环次数非常多的循环中使用，在进入循环前使用 `methodForSelector:` 获取该方法 IMP，然后缓存起来，以后每次调用该oc函数时，直接使用IMP，这种技术成为IMP Caching.
+## 如果一个objc方法实现使用次数非常多，则可以使用 `methodForSelector:` 获取该方法 IMP，然后缓存起来，以后每次调用该oc函数时，直接使用IMP。这种技术成为IMP Caching
 
 首先，有一个测试类:
 
@@ -387,6 +693,10 @@ static IMP PersonIMP2;
 2017-02-08 22:47:46.586 Test[805:25490] log1 name = 我是参数
 2017-02-08 22:47:46.587 Test[805:25490] log2 name = 我是参数
 ```
+
+## objc消息转发阶段总结
+
+<img src="./forwardinvocation.png" alt="" title="" width="700"/>
 
 ##  `_objc_msgForward` iOS系统消息转发c函数指针
 
@@ -482,141 +792,6 @@ msgSends-901
 
 所以，`_objc_msgForward`这个指针指向的c函数的作用，就是进入到消息转发阶段，从阶段1到阶段2，如果最后阶段仍然无法处理消息，就产生异常让程序退出。
 
-## 内存对象的优化
-
-### 一、大的对象在`子线程`创建
-
-- (1) 文件读入为对象
-    - plist
-    - NSCoding
-    - 图片
-    - 各种资源文件
-- (2) sqlite表数据读入为对象
-
-
-### 二、大量的对象在`子线程`释放废弃
-
-测试类打印dealloc信息
-
-```objc
-@interface Cat : NSObject
-@property (nonatomic, copy) NSString *name;
-@end
-@implementation Cat
--(void)dealloc {
-    NSLog(@"Cat %@ dealloc on thead %@", _name, [NSThread currentThread]);
-}
-@end
-```
-
-ViewController测试异步释放数组对象
-
-```objc
-@implementation ViewController
-
-- (void)asyncReleaseArray {
-    
-    //1. 假设存在一个很多子对象的数组
-    NSMutableArray *dataSource = [NSMutableArray new];
-    for (int i = 0; i < 3; i++) {
-        Cat *cat = [Cat new];
-        cat.name = [NSString stringWithFormat:@"cat%d", i+1];
-        [dataSource addObject:cat];
-    }
-    
-///////////////2. 现在要在子线程完成对数组对象的释放，如下固定三步/////////////////
-    
-    //第一步、增加一个临时数组持有所有的子对象，此时存在2个数组（dataSource、holder）持有所有的子对象
-    NSArray *holder = [[NSArray alloc] initWithArray:dataSource];
-    
-    //第二步、释放掉之前的数组对象，此时只有holder数组持有所有的子对象
-    dataSource = nil;
-    
-    //第三步、将holder数组的释放操作，异步放到子线程
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        [holder count];//当在子线程执行完方法后，该临时指针变量被废弃，于是holder指向的数组对象被废弃
-    });
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    
-	[self asyncReleaseArray]; 
-    NSLog(@"");
-}
-
-@end
-```
-
-输出信息
-
-```
-2017-02-08 23:32:25.567 Test[1107:57254] Cat cat1 dealloc on thead <NSThread: 0x7f9322598970>{number = 2, name = (null)}
-2017-02-08 23:32:25.567 Test[1107:57254] Cat cat2 dealloc on thead <NSThread: 0x7f9322598970>{number = 2, name = (null)}
-2017-02-08 23:32:25.567 Test[1107:57254] Cat cat3 dealloc on thead <NSThread: 0x7f9322598970>{number = 2, name = (null)}
-```
-
-可以看到Cat对象都是在子线程完成废弃的，并不会全部压在主线程进行废弃。
-
-### YYDispatchQueuePool中的写法
-
-
-```objc
-- (void)removeAll {
-    _totalCost = 0;
-    _totalCount = 0;
-    _head = nil;
-    _tail = nil;
-    
-    if (CFDictionaryGetCount(_nodeMap) > 0) {
-        CFMutableDictionaryRef holder = _nodeMap;//dic retainCount = 2
-        _nodeMap = CFDictionaryCreateMutable(CFAllocatorGetDefault(), 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);//dic retainCount = 1
-        
-        /**
-         *  所有的node缓存节点内存释放与废弃
-         *  - 异步释放与废弃
-         *      - 主线程
-         *      - 子线程
-         *  - 同步释放与废弃
-         *      - 当前创建node对象的所在线程（node对象的创建基本上都处于主线程）
-         */
-        
-        if (_releaseAsynchronously) {
-            if (_releaseOnMainThread && !pthread_main_np()) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    CFRelease(holder);//主线程上异步释放所有的对象, dic retainCount = 0
-                });
-            } else {
-                dispatch_queue_t queue = _releaseOnMainThread ? dispatch_get_main_queue() : XZHMemoryCacheGetReleaseQueue();
-                dispatch_async(queue, ^{
-                    CFRelease(holder);//子线程上异步释放所有的对象, dic retainCount = 0
-                });
-            }
-        } else {
-            CFRelease(holder);// 当前线程同步释放对象, dic retainCount = 0
-        }
-    }
-}
-@end
-```
-
-### 通常是在子线程创建大体积对象，然后回调主线程使用。或者将主线程上不再使用的对象，异步放到子线程完成释放废弃。
-
-- (1) 主线程创建对象 >>> 子线程异步释放与废弃
-- (1) 子线程创建对象（读取文件为对象） >>> 主线程使用完毕 >>> 主线程异步释放与废弃
-
-(1)、(2)的做法都是正确的。因为:
-
-```
-一个对象 >>> 一个内存块。
-一个线程 >>> 一个代码执行路径。
-```
-
-那么任意的代码执行路径，都能够访问到某一块内存块，所以任意的线程是能够操作内存中任意的内存块数据。
-
-所以也就是活，线程与对象是没有啥关系的，任意的对象可以在任意的线程上进行创建与释放，但是除开`UIKit`对象。
-
-但是(2)不合常理，会影响主线程的执行效率，所以不推荐。
-
 ## struct实例去持有 Foundation对象，当struct实例废弃时，要让Foundation对象在子线程上异步释放废弃
 
 ### 核心主要牵涉三个用于`c实例`与`objc对象`进行转换的东西
@@ -624,12 +799,12 @@ ViewController测试异步释放数组对象
 一、`(__bridge_retained CoreFoundation实例)Foundation对象`
 
 - (1) Foundation对象 >>> CoreFoundation实例
-- (2) [Foundation对象 retain]
+- (2) `[Foundation对象 retain]`
 
 二、`(__bridge_transfer Foundation对象)CoreFoundation实例`
 
 - (1) CoreFoundation实例 >>> Foundation对象 
-- (2) [转换后的Foundation对象 release]
+- (2) `[Foundation对象 release]`
 
 三、`__bridge` 
 
@@ -758,6 +933,15 @@ YYDispatchQueuePool的核心几点:
 
 而不会因为线程太多，导致CPU在多线程之间切换、竞争消耗无畏的资源。
 
+### 注意如果直接对NSThread进行缓存，一定要做如下几件事
+
+- (1) 获取NSThread对象的RunLoop（完成RunLoop的创建与绑定）
+- (2) 给RunLoop添加RunLoopSource监听的事件源（随便加一个NSMachPort）
+- (3) 让NSThread的`-[NSRunLoop run]`
+
+这样，这个NSThread对象的状态，才会一直处于执行状态，即使`isExecuting == YES`，这样也才能让这个NSThread对象，永远的随时随刻接收任务执行。
+
+但是如果直接对`dispatch_queue_t`实例，进行缓存的话，是不需要我们手动做上面的一些事情的，我估计是GCD底层线程池已经做了处理。
 
 ## `@package`块声明ivar
 
@@ -779,53 +963,6 @@ YYDispatchQueuePool的核心几点:
 	- UI对象的属性值调整
 	- UI对象的创建
 	- UI对象的销毁（废弃）
-
-## 在`for/while`等循环中`加锁`时，需要使用`tryLock`，不能使用`lock`，否则可能会出现线程死锁
-
-```objc
-while (!finish) {
-
-    //TODO: 防止在循环中使用pthread_mutex_lock()出现线程死锁，前面的锁没有解除，又继续加锁
-    //pthread_mutex_trylock(): 尝试获取锁，获取成功之后才加锁，否则不执行加锁
-    
-    if (pthread_mutex_trylock(&_lock) == 0) {//获取锁成功，并执行加锁
-    
-        // 缓存数据读写
-        //.....
-        
-        //解锁
-        pthread_mutex_unlock(&_lock);
-        
-    } else {
-    
-        //获取锁失败，让线程休眠10秒后再执行解锁
-        usleep(10 * 1000);
-    }
-    
-    //解锁
-    pthread_mutex_unlock(&_lock);
-}
-```
-
-
-注意是执行`加锁`处理的才需要使用`tryLock`:
-
-- (1) NSLock
-
-```c
-BOOL isGetLock = -[NSLock tryLock];
-```
-
-
-- (2) `pthread_mutex_t`
-
-```c
-pthread_mutex_t mutex;
-
-......
-
-BOOL isGetLock = pthread_mutex_trylock(&mutex);
-```
 
 ## 实现弱引用objc对象
 
@@ -977,6 +1114,198 @@ XZHProxy *proxy = [[XZHProxy alloc] initWithTarget:xiaoming];
 2016-11-16 00:07:33.180 demo[9202:125702] XiaoMing run....
 ```
 
+如上是之前的写法，但是最近看NSProxy的头文件，已经注释掉了`forwardingTargetForSelector:`这个方法的声明，说明已经无法使用了。
+
+只能通过使用NSProxy的消息转发阶段二来完成上面的代码的:
+
+- (1) `methodSignatureForSelector:`
+- (2) `forwardInvocation:`
+
+
+```objc
+@interface XZHWeakProxy : NSProxy
+@property (nonatomic, weak, readonly) id target;
+- (instancetype)initWithTarget:(id)target;
+@end
+@implementation XZHWeakProxy
+
+- (instancetype)initWithTarget:(id)target {
+    _target = target;
+    return self;
+}
+
+- (void)forwardInvocation:(NSInvocation *)invocation {
+    SEL sel = invocation.selector;
+    
+    // 从 _target 获取 method sign
+    NSMethodSignature *methodSign = [_target methodSignatureForSelector:sel];
+    
+    // 构造新的invoke
+    NSInvocation *newInvoke = [NSInvocation invocationWithMethodSignature:methodSign];
+    [newInvoke setSelector:sel];
+    [newInvoke setTarget:_target];
+    
+    // 设置Invoke参数
+    NSUInteger numArgs = [methodSign numberOfArguments];
+    for (NSUInteger index = 2; index < numArgs; index++) {//index=0是target, index=1是SEL
+        const char *type = [methodSign getArgumentTypeAtIndex:index];
+        switch (*type) {
+            case '@': {
+                id value = nil;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'c': {
+                char value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'C': {
+                unsigned char value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'B': {
+                BOOL value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 's': {
+                short value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'S': {
+                unsigned short value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'i': {
+                int value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'I': {
+                unsigned int value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'f': {
+                float value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'l': {
+                long value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'q': {
+                 long long value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'L': {
+                unsigned long value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'Q': {
+                unsigned long long value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case 'd': {
+                double value = 0;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case '#': {
+                Class value = NULL;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            case ':': {
+                SEL value = NULL;
+                [invocation getArgument:&value atIndex:index];
+                [newInvoke setArgument:&value atIndex:index];
+            }
+                break;
+            default:
+                break;
+        }
+    }
+    
+    [newInvoke invoke];
+}
+
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
+    if (_target) {
+        return [_target methodSignatureForSelector:sel];
+    } else {
+        return [super methodSignatureForSelector:sel];
+    }
+}
+
+- (BOOL)respondsToSelector:(SEL)aSelector {
+    if (_target) {
+        return [_target respondsToSelector:aSelector];
+    } else {
+        return [super respondsToSelector:aSelector];
+    }
+}
+
+@end
+```
+
+这样是可以通过继承NSProxy完成弱引用代理，但其实可以直接继承`NSObject`完成`假的`弱引用代理。
+
+```objc
+@interface ASWeakProxy : NSObject
+@property (nonatomic, weak, readonly) id target;
++ (instancetype)weakProxyWithTarget:(id)target;
+@end
+@implementation ASWeakProxy
+
+- (instancetype)initWithTarget:(id)target
+{
+  if (self = [super init]) {
+    _target = target;
+  }
+  return self;
+}
+
++ (instancetype)weakProxyWithTarget:(id)target
+{
+  return [[ASWeakProxy alloc] initWithTarget:target];
+}
+
+- (id)forwardingTargetForSelector:(SEL)aSelector
+{
+  return _target;
+}
+
+@end
+```
+
+这样又可以直接使用消息转发阶段二中的最简单的`forwardingTargetForSelector:`来完成消息转发了。
+
+
 ## `hitTest:withEvent:` 与 `pointInside:withEvent:`
 
 ### 关于`-[UIView hitTest:withEvent:]`的源码大致实现
@@ -1014,16 +1343,17 @@ XZHProxy *proxy = [[XZHProxy alloc] initWithTarget:xiaoming];
 
 可以看到这个`hitTest:withEvent:`函数实现，主要就是测试这个UIView对象，到底能不能够处理这个UI触摸事件。
 
-事件查找顺序是这样的:
+执行`hitTest:`的层次顺序如下:
 
 ```
 - UIApplication
 	- UIWindow
 		- RootView
-			- Subviews
+			- Subviews[n-1]
+			- Subviews[n-2] 
+			- ....
+			- Subviews[0]
 ```
-
-而最终Subviews是从`最上面`的subview开始hitTest:。
 
 ### 使用Category Associate 扩大UI的事件响应区域
 
@@ -1176,343 +1506,6 @@ NSLog(@"house state = %ld", state & HouseStateMask);
 NSLog(@"car state = %ld", state & CarStateMask);
 ```
 
-## objc对象/c struct实例中，实例变量/成员变量的`内存布局` 规则:
-
-
-```objc
-@interface Cat : NSObject {
-
-    @public
-    NSString *_name;
-    NSString *_type;
-    
-    @private
-    NSString *_cid;
-}
-@end
-@implementation Cat
-@end
-```
-
-如上写法定义的实例变量的`地址布局`，在程序代码`编译期间`就已经确定了。那么如果运行时去修改这个布局，就会导致Ivar地址错乱，出现存取数据错误。
-
-
-### 对象的所有实例变量的布局计算规律是，按照实例变量的定义`从上到下`的顺序
-
-- 每一个实例变量的布局起始地址，排列在上一个实例变量地址的`末尾`
-- 每一个实例变量占用的`内存长度`，就是是自己数据类型的占用总长度
-- 每一个实例变量的`偏移量offset`，都是相对于`所属对象`所在内存块的`起始地址`
-- OC对象实例变量的偏移量计算，和`struct结构体属性`的偏移量计算是非常相似的，也存在`字节对齐`的问题
-
-### 现代计算机都是使用`字节`进行内存地址分配，也就存在`字节对齐`的问题
-
-结构体中的元素布局（字节对齐），如下两个结构体，元素都是一样的，以32位系统为例.
-
-```c
-struct A {
-    int a;      // 占4个字节
-    char b;     // 占1个字节
-    short c;    // 占2个字节
-};
-```
-
-```c
-struct B {
-    char a;     // 占1个字节
-    int b;      // 占4个字节
-    short c;    // 占2个字节
-};
-```
-
-看起来的话两个结构体的总长度都是7个字节，但是如下打印却是:
-
-```c
-int main() {
-    
-    printf("%lu\n", sizeof(struct A));
-    printf("%lu\n", sizeof(struct B));
-    
-    return 0;
-}
-```
-
-```
-8
-12
-Program ended with exit code: 0
-```
-
-长度分别是8和12，那么为什么不是7了？原因是`字节对齐`的规则。
-
-现代计算机内存单元，都是使用`字节（代替8个二进制位）`作为基本单位划分。理论上说可以从任何的内存地址来访问到变量的所在内存单元。但是实际上，为了提升效率，各种类型的数据地址是按照`一定的规律来有序排列`，那么所以对于某一些类型的数据访问，可以直接从特定的位置上开始访问，就不用从头开始遍历寻找。牺牲空间来换取时间，这就是字节对齐。
-
-### 结构体默认的字节对齐一般满足三个标准:
-
-- (1) 结构体变量的`首地址`能够被该结构体中`最大长度`的成员变量的长度所`整除`.
-	- 首地址不好控制，一般程序操作不了的，直接由操作系统分配的
-
-- (2) 结构体变量中每个成员变量相对于`结构体变量首地址`的偏移量（offset）都是成员变量自身长度的`整数倍`.
-	- `成员变量的偏移量`不够时由编译器自动填充
-
-- (3) 结构体变量的总长度为成员变量中最大长度的`整数倍`.
-	- `结构体的总长度`不够时由编译器自动填充
-
-
-### 编译器会自动进行字节对齐，使用空白无用的内存字节作为填充。
-
-那么对于上面的`结构体A变量`的内存字节布局是这样的:
-
-- 首先变量a是int类型，占用4个字节
-	- 第一个变量直接放
-- 然后变量b是char类型，占用1个字节
-	- 相对于起始地址的偏移量 = 4，满足规则2
-	- 所以直接从第五个字节开始存放b，并占用一个字节长度
-- 最后变量c是short类型，占用2个字节
-	- 此时相对于起始地址的偏移量 = 5，`不满足规则2`
-	- 所以向后填充一个字节，这个填充字节什么事都不干，就是为了字节对齐
-	- 那么此时变量c相对起始地址的偏移量 = 6，刚好是2的整数倍，c占用两个字节
-- 所以最终长度 = 8个字节
-
-
-### 那么对于`结构体变量B`的内存字节布局是这样的:
-
-- 首先变量a是char类型，占用1个字节
-	- 第一个变量直接放
-- 然后变量b是int类型，占用4个字节
-	- 此时相对于起始地址的偏移量 = 1，`不满足规则2`
-	- 为了让b相对起始地址的偏移量是int长度（4）的整数倍
-	- 所以修改为`偏移量 = 4`，就是说`空出三个`没用的字节，什么都不干，就是为了字节对齐
-	- 从第5个字节开始排布变量b，并占用4个字节长度
-	- 此时总长度为8个字节
-- 最后变量c是short类型，占用2个字节
-	- 此时相对于起始地址的偏移量 = 8，`满足规则2`，直接排布c
-	- c此时占用2个字节长度
-	- 那么此时结构体总长度 = 10，`不满足规则3`
-- 为了让结构体总长度是成员最大长度的整数倍
-	- 最大成员长度是b = 4
-	- 所以最后扩展为长度 = 12，刚好大于10又是4的整数倍
-- 所以最终的结构体B的长度是12
-
-### 对于上面的两个结构体可以使用`保留字节`来避免编译器自动填充字节作为无用字节:
-
-```c
-struct A {
-    int a;          	// 占4个字节
-    char b;         	// 占1个字节
-    char reserved;  	// 此处会由编译器填充1个字节，那么我们可以定义以后使用的保留变量来操作
-    short c;        	// 占2个字节
-};
-
-struct B {
-    char a;             // 占1个字节
-    char reserved1[3];  // 此处会由编译器填充3个字节，那么我们可以定义以后使用的保留变量来操作
-    int c;              // 占4个字节
-    short b;            // 占2个字节
-    char reserved2[2];  // 此处会由编译器填充2个字节，那么我们可以定义以后使用的保留变量来操作
-};
-```
-
-对于上面使用reserved保留变量声明的内存字节，我们也可以去使用了。而如果我们不使用reserved保留变量去指向这些字节，那么这些字节就相当于放在那什么也不干就是为了字节对齐，什么用都没有。
-
-
-### 对于结构体成员变量从上到下排布的原则:
-
-- (1) 成员变量的排布按照自身的长度`从小到大`依次排列
-- (2) 尽量的使用`保留字段`，来使用由编译器进行字节对齐时填充无用的字节
-
-### 对上面两个结构体按照如上原则最后的修改版本为如下:
-
-```c
-struct C {
-    char a;             // 占1个字节
-    char reserved;      // 此处会由编译器填充1个字节，那么我们可以定义以后使用的保留变量来操作
-    short b;            // 占2个字节
-    int c;              // 占4个字节
-};
-```
-
-### 再回头看看Cat对象的所有实例变量的内存地址布局如下所示:
-
-| 属性相对Cat对象起始地址的偏移量offset | Cat对象的实例变量 | 
-| :-------------: |:-------------:| 
-| +0 字节 | `_firstName` | 
-| +4 字节 | `_lastName` | 
-| +8 字节 | `_pid` | 
-
-上面所示的实例变量的内存布局在代码`编译期间`就已经确定了，如果是新增加一个实例变量或者减少一个实例变量，就必须要`重新编译`程序代码，让编译器重新计算所有实例变量的内存布局，否则就会出现地址错乱。
-
-### 对于`Cat对象->_firstName`这句代码实际作用:
-
-- (1) 首先找到当前`Cat对象`的所在内存的`起始地址`
-- (2) 从某个全局记录表中，查询到`_firstName`这个Ivar对应的地址`偏移量offset`
-- (3) 通过 `偏移量offset + Cat对象内存起始地址` 作为存取 实例变量 `_firstName` 的所在内存地址
-
-### 如果在`程序运行`期间，通过`objc/runtime.h`中提供的运行时api来给Cat对象添加一个新的实例变量Ivar或者移除某一个已有的Ivar，会引出问题吗？
-
- 肯定会的。
-
-```objc
-@interface Cat : NSObject {
-
-    @public
-    NSString *_runtimeAddIvar;//假设这个Ivar是在运行时添加
-    
-    NSString *_firstName;
-    NSString *_lastName;
-    
-    @private
-    NSString *_pid;
-}
-
-@end
-```
-
-如果运行时将Cat对象添加一个新的实例变量`_runtimeAddIvar`，那么此时Dog对象所有实例变量的内存布局应该是如下这样:
-
-| 属性相对Cat对象起始地址的偏移量 | Cat对象的实例变量 | 
-| :-------------: |:-------------:| 
-| +0 | `_runtimeAddIvar` | 
-| +4 | `_firstName ` | 
-| +8 | `_lastName ` | 
-| +12 | `_pid` | 
-
-
-`如果系统没有更新保存实例变量对应的内存布局地址`，就会导致如下错误:
-
-- (1) `Dog对象->_runtimeAddIvar`访问实例变量，实际上访问到了新添加的实例变量`_runtimeAddIvar`
-
-- (2) `Dog对象->_firstName`访问实例变量，实际上访问到了新添加的实例变量`_lastName`
-
-- (3) `Dog对象->_lastName`访问实例变量，实际上访问到了新添加的实例变量`_pid`
-
-所以如果记录实例变量对应内存地址布局的全局配置中，没有得到及时的更新的话，就会造成实例变量的访问全部乱套。
-
-### 系统会不会根据Class改变后自动进行调整布局吗？
-
-OK，对如上的Cat类在运行时尝试添加Ivar看看。
-
-```objc
-- (void)demo1 {
-    
-    Cat *c = [Cat new];
-    
-    if(class_addIvar(objc_getClass("Cat"), "runtimeAddIvar", sizeof(NSString *), 0, "@")) {
-        NSLog(@"add ivar success");
-        
-        c->_firstName = @"Li";
-        c->_lastName = @"Ming";
-        [c setValue:@"hello world" forKey:@"runtimeAddIvar"];
-        
-        NSLog(@"_firstName = %@", c->_firstName);
-        NSLog(@"_lastName = %@", c->_lastName);
-        NSLog(@"_runtimeAddIvar = %@", [c valueForKey:@"runtimeAddIvar"]);
-        
-    } else {
-        NSLog(@"add ivar failed");
-    }
-}
-```
-
-我试了很久`class_addIvar()`方法返回值一直是`NO`，结果表示添加Ivar一直是失败的。我开始一直以为`class_addIvar()`方法中的参数有问题，但是尝试了很多次参数修改，就是无法添加成功。
-
-我就很纳闷了，以前都可以添加成功的，为啥现在不行了？于是我打开我之前记录的添加Ivar成功的代码如下:
-
-```objc
-- (void)demo2 {
-    
-    // 运行时创建一个类
-    Class MyClass = objc_allocateClassPair([NSObject class], "myclass", 0);
-    
-    // 添加一个NSString的实例变量，第四个参数是对其方式，第五个参数是参数类型编码
-    if(class_addIvar(MyClass, "itest", sizeof(NSString *), 0, "@")) {
-        NSLog(@"add ivar success");
-    } else {
-        NSLog(@"add ivar failed");
-    }
-    
-    // 向运行时系统注册创建的类
-    objc_registerClassPair(MyClass);
-}
-```
-
-运行结果
-
-```
-2016-07-17 17:17:34.550 Demo[14993:239703] add ivar success
-```
-
-确实可以啊，为啥上面的demo1方法中就死添加不成功了，我对比两种添加的方式对比了好久好久，没有发现哪里不一样。但是突然看到了有一个很大的区别:
-
-- (1) 前面的`Cat`类，是我在Xcode工程中添加的存在源文件的类
-
-- (2) 后面的`MyClass`类，在代码编译期间是不存在的，只有程序运行期执行了`objc_allocateClassPair()`函数之后才会出现的类
-
-我觉得这个区别就是导致`Cat`类不能添加Ivar的原因。于是，我在网上搜是否有这样的记录。于是在`http://www.cocoachina.com/ios/20141031/10105.html`中找到了答案:
-
-```
-- (1) Objective-C 不支持 往`已存在`的类中添加实例变量
-	- 系统库中，已经存在的源码文件的类
-	- 我们自己Xcode工程中，已经存在源码文件的类
-	- 我理解`已存在`的意思是 >>> 已经存在源码文件定义的类
-
-- (2) 只能向还没有存在（运行时动态创建并注册到系统的类）类，才能够使用`class_addIvar()`添加Ivar实例变量
-
-- (3) 且必须注意 `class_addIvar()`函数出现位置必须满足:
-	- (1) objc_allocateClassPair()之后 >>> 创建类之后
-	- (2) objc_registerClassPair()之前 >>> 注册类之前
-
-- (4) 不能够向`Meta元类`进行使用 >>> 因为实例变量只能够出现在OC对象
-```
-
-第三点，我觉得是最重要的，其实我们所编写出现在 `.h与.m 中的Objetive-C类`其实最终也是走上面出现的那一段注册类代码步骤:
-
-```objc
-// 1. 运行时创建一个类
-Class MyClass = objc_allocateClassPair([NSObject class], "myclass", 0);
-    
-// 2. 添加一个NSString的实例变量，第四个参数是对其方式，第五个参数是参数类型编码
-if(class_addIvar(MyClass, "itest", sizeof(NSString *), 0, "@")) {
-    NSLog(@"add ivar success");
-} else {
-    NSLog(@"add ivar failed");
-}
-    
-// 3. 向运行时系统注册创建的类
-objc_registerClassPair(MyClass);
-```
-
-我觉得这几个步骤已经由运行时runtime库帮我们做了。runtime自动读取我们的.h与.m，并使用如下这些函数将我们编写的类注册到运行时系统环境，以便后续使用:
-
-- (1) `objc_allocateClassPair()` 创建一个类
-- (2) `class_addIvar()` 添加实例变量
-- (3) `class_addMethod()` 添加实例方法
-- (4) `objc_registerClassPair()` 将类注册到运行时环境，这一步可能就会进行Ivar的内存布局计算了，之后就无法再改变了，所以这就是为什么之前给Cat类添加Ivar不成功的原因
-
-### 对于已经执行`objc_registerClassPair()`的类不能够使用`class_addIvar()`来添加实例变量，这是否就是对之前的可能会出现Ivar地址错乱问题的规避了？
-
-问题: 如果运行时动态给对象添加一个实例变量时，如果不重新计算所有实例变量的内存地址布局，就会导致实例变量的访问错位。
-
-我觉得这正是直接避免产生这样的问题的直接解决方案，直接不让开发者对已经存在的类去添加实例变量Ivar的操作，这不就是直接去避免了上面的问题吗？
-
-上面这部分是我看书的时候突然想到的一个问题，然而不是书上主要描述的问题。那么书上建议对属性的操作原则:
-
-- (1) 不要在外部直接操作对象的实例变量
-- (2) 而是应该通过对象的暴露的存取方法来间接操作实例变量
-
-如上两点正是引出了`@property`的使用，告诉编译器自动做如下事情:
-
-- (1) 属性最终对应的实例变量 >>> `_name`
-- (2) 实例变量的读取方法 >>> `name`实现
-- (3) 实例变量的修改方法 >>> `setName:`实现
-- (4) `NSString  *str = 对象.name;` 自动调用`name`方法实现
-- (5) `对象.name = @"haha"` 自动调用`setName:`方法实现
-- (6) 对于`对象.name = @"haha"`调用setter时
-	- 遵守属性声明时给出的`对象内存管理策略`
-	- 修改值之后，自动发出属性修改KVO通知
-	- 如果通过`_name = @"haha"` 则不会触发上面两件事
-
-
-
 ## `-[NSObject class]`、`+[NSObject class]`、`objc_getClass(<#const char *name#>)`的区别
 
 ### `-[NSObject class]`源码实现
@@ -1564,8 +1557,8 @@ Class object_getClass(id obj)
 	
 -  `__strong`
 
-- (1) 释放已有的老对象，`[老对象 release]`，老对象retainCount--
-- (2) 持有传入的新对象，`[新对象 retain]`，新对象retainCount++
+	- (1) 释放已有的老对象，`[老对象 release]`，老对象retainCount--
+	- (2) 持有传入的新对象，`[新对象 retain]`，新对象retainCount++
 
 - `__unsafe_unretaind`
 
@@ -1596,10 +1589,7 @@ Dog *dog =[Dog new];
 
 - assign:
 	- 一般使用一些基本数据类型的属性变量（int、float、bool...）
-	- 类似weak，但是区别是，在指向的对象被废弃掉时，指针变量值不会自动赋值为nil
-	- 而weak修饰的指针变量会自动赋值nil
-
-
+	- 类似`__unsafe_unretaind`
 
 ## 对象内部进行属性变读取时，尽量使用 `_varibale` 直接操作实例变量
 
@@ -1609,7 +1599,7 @@ Dog *dog =[Dog new];
 - 通过 `self.variable` 来读写
 
 
-### 通过 `对象.属性` 进行读取
+### 通过 `对象.属性` 进行读写
 	
 - 可以`懒加载`的属性
 - **调用setter设置新值时，会触发KVO通知**
@@ -1617,7 +1607,7 @@ Dog *dog =[Dog new];
 	- assign、copy、weak、strong、`unsafe_unretained` ...
 - 还可以重写 setter与getter 方法，完成断点调试
 
-### 通过 `_属性名` 进行读取
+### 通过 `_属性名` 进行读写
 
 - `绕过`了属性定义的`内存管理`修饰
 - `绕过`了属性定义的`读写权限`修饰（可以使用KVC操作私有实例变量）
@@ -1635,36 +1625,7 @@ Dog *dog =[Dog new];
 
 - (3)对于使用`懒加载`的属性，总应该是使用 `self.属性名`来进行`读`
 
-
-## 单例模板
-
-```c
-@implementation Tool
-
-+ (instancetype)sharedInstance {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        _instance = [[self alloc] init];
-    });
-    return _instance;
-}
-
-+ (instancetype)allocWithZone:(struct _NSZone *)zone {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        _instance = [super allocWithZone:zone];
-    });
-    return _instance;
-}
-
-- (id)copyWithZone:(NSZone *)zone {
-    return _instance;
-}
-
-@end
-```
-
-## Cache 内存缓存多线程环境的代码模板
+## Cache缓存数据、在多线程环境下使用的代码模板
 
 ```objc
 @interface ClassMapper : NSObject
@@ -1760,11 +1721,87 @@ Dog *dog =[Dog new];
 
 尽量避免GPU离屏渲染，但是为了能够异步进行绘制，也有可能操作CPU离屏渲染。
 
-但是最后这两种离屏渲染，都不做。
+### 但是最好这两种离屏渲染都不做，对于上面两种离屏渲染的针对性处理:
 
-## FMDatabaseQueue解决`dispatch_sync`可能导致多线程死锁
+- (1) CPU的离屏渲染 >>> 尽量的使用`专用图层`（CATextLayer...）
+- (2) GPU的离屏渲染 >>> 尽量`提前在子线程上异步`完成文本、图形、图像的`渲染`
 
-主要是如下两个相关函数的使用:
+参见`CoreText三、CoreText基础、使用、优化.md`。
+
+
+## 最好不要重写`-[UIView drawRect:]`来完成文本、图形的绘制，而是使用`专用图层`来专门完成绘制
+
+### 首先清楚，CPU与GPU的强项与弱势：
+
+- (1) CPU、对数据的计算处理相当快，但是对于图像的渲染很差
+- (2) GPU、有很多核心来同时做图像的渲染，所以很快。但是对于数据的计算处理，是很慢的
+
+
+所以，一定要充分利用GPU与CPU的强项：
+
+```
+CPU >>> 大量进行数据计算，少进行图像渲染
+GPU >>> 大量进行图像渲染，少进行数据计算
+```
+
+- (1) `OpenGL`绘制图像，会交给`GPU`完成渲染
+- (2) `CoreGraphics`绘制图像，会交给`CPU`完成渲染
+
+所以，最好让CPU只做一些`数据计算`，而CPU只会`图像渲染`，这样整体性能会提升很多。
+
+### 为什么不要重写`drawRect:` 
+
+- (1) 只要重写`drawRect:`，就会给layer创建一个`空的宿主图像`而浪费内存
+
+- (2) `CoreGraphics`的图像绘制，会触发`CPU的离屏渲染`，而CPU的`图像渲染`能力是很差的，会影响CPU的执行效率
+
+- (3) `专用图层`把图像渲染代码使用OpenGL操作`GPU`来完成图像的渲染，内存优化
+
+下面是使用专用图层来绘制自定义路径的代码模板，`代替`使用重写`drawRect:`
+
+```objc
+@implementation XingNengVC {
+    UIView  *_bottomView;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    
+    //1. 创建UIView容器
+    _bottomView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 200)];
+    [self.view addSubview:_bottomView];
+    
+    //2. 创建具体绘制图像的专用图层
+    CAShapeLayer *layer = [CAShapeLayer layer];
+    layer.frame = _bottomView.bounds;
+    
+    //3. 设置要绘制的图像路径
+    UIBezierPath *path = [[UIBezierPath alloc] init];
+    [path moveToPoint:CGPointMake(175, 100)];
+    [path addArcWithCenter:CGPointMake(150, 100) radius:25 startAngle:0 endAngle:2*M_PI clockwise:YES];
+    [path moveToPoint:CGPointMake(150, 125)];
+    [path addLineToPoint:CGPointMake(150, 175)];
+    [path addLineToPoint:CGPointMake(125, 225)];
+    [path moveToPoint:CGPointMake(150, 175)];
+    [path addLineToPoint:CGPointMake(175, 225)];
+    [path moveToPoint:CGPointMake(100, 150)];
+    [path addLineToPoint:CGPointMake(200, 150)];
+    
+    //4. 将要绘制的路径设置给layer
+    layer.path = path.CGPath;
+    
+    //3.
+    [_bottomView.layer addSublayer:layer];
+}
+
+@end
+```
+
+## FMDatabaseQueue解决`dispatch_sync(queue, ^(){});`可能导致多线程死锁
+
+### 主要是如下两个相关函数的使用:
+
+给queue绑定一个标记值
 
 ```c
 dispatch_queue_set_specific(dispatch_queue_t queue, 
@@ -1772,64 +1809,119 @@ dispatch_queue_set_specific(dispatch_queue_t queue,
 							void *context, dispatch_function_t destructor);
 ```	
 
+取出queue绑定的标记值
+
 ```c
 void * dispatch_get_specific(const void *key);
 ```
 
 有点类似runtime中的 `objc_setAssociatedObject()`与`objc_getAssociatedObject()`，动态绑定一个对象。
 
-FMDB解决线程死锁: 主要是防止在 `同一个队列` 上进行 dispatch block任务:
+那么在使用`dispatch_sync(){queue, block}`之前，取出queue绑定的标记值，看是否与当前即将要执行`dispatch_sync`任务的的queue绑定的标记值，是否是一样的。
 
+- (1) 如果一样，说明当前即将执行`dispatch_sync`任务的的queue，就是之前的queue
+- (2) 如果不一样，说明是不一样的queue
+
+### 当queue时`串行`队列时，造成`dispatch_sync(){}`线程死锁的模板如下:
 
 ```objc
-//1. 
-static const void * const kDispatchQueueSpecificKey = &kDispatchQueueSpecificKey;
+假设下面都是使用同一个queue（串行队列才会有问题）
 
-//2. 绑定一个queue给self
-//创建一个串行队列来执行数据库的所有操作
-_queue = dispatch_queue_create([[NSString stringWithFormat:@"fmdb.%@", self] UTF8String], NULL);
+- (void)test1 {
+	dispatch_async(queue, ^() {
+		[self test2];//让test2处于queue分配的线程
+	});
+}
 
-//通过key标示队列，设置context为self
-dispatch_queue_set_specific(_queue, kDispatchQueueSpecificKey, (__bridge void *)self, NULL);
+- (void)test2 {
+	// 当前方法执行已经处于串行queue分配的唯一线程上了
 
-//3. 在inDatabase:方法中，取出绑定的queue
-//判断queue是否与当前方法执行所在线程的队列一致
-//如果一样，就不往下执行，否则会出现线程死锁
-- (void)inDatabase:(void (^)(FMDatabase *db))block {
-    FMDatabaseQueue *currentSyncQueue = (__bridge id)dispatch_get_specific(kDispatchQueueSpecificKey);
-    assert(currentSyncQueue != self && "inDatabase: was called reentrantly on the same queue, which would lead to a deadlock");
-    
-    // 后面是dispatch_sync()的代码.....
+	dispatch_sync(queue, ^() {
+		NSLog(@"hello world!");
+	});
 }
 ```
 
-通过取出当前线程中key对应的value，是否是之前指定的value:
+### FMDB的具体写法
 
+唯一key定义
 
-- (1) 如果是，说明是`同一个`线程，则不能执行`dispatch_sync()`
-- (2) 如果不是，说明是`不同`的线程，可以执行
+```objc
+static const void * const kDispatchQueueSpecificKey = &kDispatchQueueSpecificKey;
+```
 
-下面是一个基于c语言的context的例子：
+创建一个串行队列来执行数据库的所有操作
+
+```objc
+_queue = dispatch_queue_create([[NSString stringWithFormat:@"fmdb.%@", self] UTF8String], NULL);
+```
+
+通过key唯一标记，将`当前FMDBDataBaseQueue对象`，绑定给queue
+
+```objc
+dispatch_queue_set_specific(_queue, kDispatchQueueSpecificKey, (__bridge void *)self, NULL);
+```
+
+在`inDatabase:`方法中即将执行`dispatch_sync(quue, block);`之前，取出queue绑定的标记值，看是否等于`当前FMDBDataBaseQueue对象`。如果相等说明是同一个`串行queue`，就不能执行`dispatch_sync(quue, block);`，否则会出现线程的死锁。
+
+```objc
+- (void)inDatabase:(void (^)(FMDatabase *db))block {
+
+	//1. 取出queue绑定的标记值
+    FMDatabaseQueue *currentSyncQueue = (__bridge id)dispatch_get_specific(kDispatchQueueSpecificKey);
+    
+    //2. 标记值必须不能等于当前的FMDBDataBaseQueue对象。
+    // 否则让程序崩溃退出
+    assert(currentSyncQueue != self && "inDatabase: was called reentrantly on the same queue, which would lead to a deadlock");
+    
+    //3. 后面是dispatch_sync()的代码.....
+    //.......
+}
+```
+
+### 下面是一个通过定义`c struct`，来代替前面的`FMDBDataBaseQueue对象`作为标记值的例子
+
+Context结构体定义
 
 ```c
-//1.
 typedef struct NetworkMetaDataDispatchQueueContext {
     char reversed;
 }NetworkMetaDataDispatchQueueContext;
+```
 
-//2. 定义一个全局存在的结构体实例，用来判断是否一致
+定义一个全局存在的结构体实例，用来判断是否一致
+
+```c
 static NetworkMetaDataDispatchQueueContext _context;
+```
 
-//3. 唯一key
+唯一key定义
+
+```objc
 static const void * const kNetworkCacheMetaDispatchQueueSpecificKey = &kNetworkCacheMetaDispatchQueueSpecificKey;
+```
 
-//4. 给queue绑定全局静态实例context
+使用唯一key，给queue绑定全局静态的Context实例
+
+```objc
 dispatch_queue_t queue = queue = dispatch_queue_create("queue.xzhnrtwork.incomplet.data.write", attr);
 dispatch_queue_set_specific(queue, kNetworkCacheMetaDispatchQueueSpecificKey, (void*)(&_context), NULL);
+```
 
-//5. 取出queue绑定的context，判断是否全全局context一致，避免处于同一线程，使用dispatch_sync()导致线程发生死锁
-if ((void*)(&_context) == dispatch_get_specific(kNetworkCacheMetaDispatchQueueSpecificKey)) {
-    return nil;
+执行`dispatch_sync(queu, block);`之前，取出queue绑定的context，判断是否全全局context一致，避免处于同一线程，使用dispatch_sync()导致线程发生死锁
+
+```objc
+- (void)doWork {
+
+	//1.
+	if ((void*)(&_context) == dispatch_get_specific(kNetworkCacheMetaDispatchQueueSpecificKey)) {
+		return;
+	}
+	
+	//2. 
+	dispatch_sync(queue, ^() {
+		...........
+	});
 }
 ```
 
@@ -1941,9 +2033,16 @@ if ((void*)(&_context) == dispatch_get_specific(kNetworkCacheMetaDispatchQueueSp
 @end
 ```
 
+最近看NSProxy已经注释掉了`forwardingTargetForSelector:`，所以可以通过:
+
+- (1) `methodSignatureForSelector:` + `forwardInvocation:`
+- (2) 继承自NSObject完成`forwardingTargetForSelector:`
+
 ## type encodings 数据类型的系统存放的字符值
 
 ### `objc_property_attribute_t.name[0]` 的type encodings
+
+一个使用`@property`定义的属性正串编码中的，`第一个字符`:
 
 ```c
  static const char XZHPropertyAttributeBegin = 'T';//T@\"NSString\",C,N,V_name，作为属性编码的开始符，不作为属性权限修饰符
@@ -2033,14 +2132,21 @@ static const char XZHIvarTypeCBitFields = _C_BFLD;//b
 ## objc对象的内存管理
 
 
-### 错误纠正: 对象的释放与废弃，是两个`不同的阶段`。`释放`持有是`同步`完成，内存`废弃`是`异步`完成。
+### 错误纠正: 对象的`释放`与`废弃`，是两个`不同的阶段`。
 
-- (1) 当对象的`持有数==0（retainCount==0）`时
-- (2) 表示这个对象，`即将`会被废弃，但是此时`并未废弃`
-	- 只是标示这个对象，将要被废弃
-- (3) 当某个空闲时间，系统彻底将对象所在内存数据全部擦除，然后与系统未分配内存进行合并，以待后续继续使用
+> 释放
 
-所以说，执行了dealloc，并不是说对象所在内存就被废弃了。
+应该是释放对象的`持有`，即对objc对象发送`retain\release\autorelase`等消息，修改objc对象的`retainCount`值，但是对象的内存一直都还存在。
+
+释放持有的操作，是`同步`的。
+
+> 废弃
+
+当某个`空闲`时间，系统才会将内存的数据全部擦除干净，然后将这块内存`合并为系统未使用的内存`中。而此时如果程序继续访问该内存块，就会造成程序崩溃。
+
+内存的彻底废弃操作，是`异步`的，也就是说有一定的`延迟`。
+
+所以说，执行了`-[NSObject dealloc]`，并不是说对象所在内存就被废弃了，只是对于常理来说，这个对象已经标记为即将废弃，程序中也不要再继续使用了。
 
 
 ```objc
@@ -2075,11 +2181,11 @@ thread 1:EXC_BAD_ACCESS ....
 
 那这样是说最终对象的内存废弃过程，是一个`异步`执行的吗？或者说有一定的`延迟时间`吗？
 
-是延迟的，因为最终对象内存会被擦除掉，并与系统内存合并到一起，所以这个过程确实是一个异步的。
+是`延迟`的，因为最终对象内存会被擦除掉，并与系统内存合并到一起，所以这个过程确实是一个异步的。
 
 ### 小结使用 `__strong` 修饰对象的指针变量:
 
-- (1) 不必再次写retain、release的消息代码
+- (1) 会自动添加对象的`retain\release`的消息代码
 - (2) 完美的满足了引用计数器方式管理内存
 	- 自己生成的对象，自己持有
 	- 非自己生成的对象，自己也能持有
@@ -2282,89 +2388,6 @@ objc_release(obj);
 }
 
 @end
-```
-
-## 最好不要重写`drawRect: 或 drawInContext:`，使用`CoreGraphics`完成绘制图像。而是使用`专用图层`来专门完成绘制，还可以直接将`专用图层`作为View的`宿主图层`。为什么?
-
-### 首先清楚，CPU与GPU的强项与弱势：
-
-- (1) CPU、对数据的计算处理相当快，但是对于图像的渲染很差
-- (2) GPU、有很多核心来同时做图像的渲染，所以很快。但是对于数据的计算处理，是很慢的
-
-
-所以，一定要充分利用GPU与CPU的强项：
-
-```
-CPU >>> 大量进行数据计算，少进行图像渲染
-GPU >>> 大量进行图像渲染，少进行数据计算
-```
-
-- (1) `OpenGL`绘制图像，会交给`GPU`完成渲染
-- (2) `CoreGraphics`绘制图像，会交给`CPU`完成渲染
-
-所以，最好让CPU只做一些`数据计算`，而CPU只会`图像渲染`，这样整体性能会提升很多。
-
-### 为什么不要重写`drawRect: 或 drawInContext:`，使用`CoreGraphics`完成绘制图像？
-
-- (1) 只要重写`drawRect: 或 drawInContext:`，就会给layer创建一个空的宿主图像，浪费内存
-
-- (2) CoreGraphics的图像绘制，会触发`CPU的离屏渲染`，而CPU的`图像渲染`能力是很差的，会影响CPU的执行效率
-
-- (3) `专用图层`把图像渲染代码使用OpenGL操作`GPU`来完成图像的渲染，内存优化
-
-下面是使用专用图层来绘制自定义路径的代码模板，`代替`使用重写`drawRect:`
-
-```objc
-@implementation XingNengVC {
-    UIView  *_bottomView;
-}
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    
-    //1. 创建UIView容器
-    _bottomView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 200)];
-    [self.view addSubview:_bottomView];
-    
-    //2. 创建具体绘制图像的专用图层
-    CAShapeLayer *layer = [CAShapeLayer layer];
-    layer.frame = _bottomView.bounds;
-    
-    //3. 设置要绘制的图像路径
-    UIBezierPath *path = [[UIBezierPath alloc] init];
-    [path moveToPoint:CGPointMake(175, 100)];
-    [path addArcWithCenter:CGPointMake(150, 100) radius:25 startAngle:0 endAngle:2*M_PI clockwise:YES];
-    [path moveToPoint:CGPointMake(150, 125)];
-    [path addLineToPoint:CGPointMake(150, 175)];
-    [path addLineToPoint:CGPointMake(125, 225)];
-    [path moveToPoint:CGPointMake(150, 175)];
-    [path addLineToPoint:CGPointMake(175, 225)];
-    [path moveToPoint:CGPointMake(100, 150)];
-    [path addLineToPoint:CGPointMake(200, 150)];
-    
-    //4. 将要绘制的路径设置给layer
-    layer.path = path.CGPath;
-    
-    //3.
-    [_bottomView.layer addSublayer:layer];
-}
-
-@end
-```
-
-## `BAD_ACCESS`异常崩溃模板代码
-
-```objc
-NSObject *obj1 = [NSObject new];
-
-//1.
-__unsafe_unretained NSObject *obj2 = obj1;
-
-//2.
-obj1 = nil;
-
-//3.
-[obj2 description];
 ```
 
 ## 几种获取Class的系统方法实现源码
@@ -2753,3 +2776,243 @@ static __NSPlacehodlerArray *GetPlaceholderForNSMutableArray() {
 ### 图示小结
 
 <img src="./类簇类应用1.png" alt="" title="" width="700"/>
+
+
+## 重写`-[UIView setFrame:]`方法，让系统计算完成的frame再进行二次调整
+
+```objc
+- (void)setFrame:(CGRect)frame {
+    
+    //1. 对系统计算完成传入的frame进行内部调整
+    CGRect rect = frame;
+    rect.size.width += 100;//对宽度调整增加100
+    
+    //2. 最后让系统设置我们修改过的frame
+    [super setFrame:rect];
+}
+```
+
+也可以重写`layoutSubviews`完成frame计算、设置。
+
+## `__has_include(库/头文件.h)`判断是否导入某个静态库
+
+```
+#import "xxx.h" 是从当前工程的编译路径中查找xxx.h
+#import <xxx/xxx.h> 从xxx静态库中查找xxx.h
+```
+
+```c
+#if __has_include(<sqlite3.h>)
+//从库中查找 .h
+#import <sqlite3.h>
+#else
+//从编译路径中查找 .h
+#import "sqlite3.h"
+#endif
+```
+
+YYModel.h中的写法
+
+
+```objc
+//是否有 __has_include 这个宏
+#ifdef __has_include 
+
+#if __has_include(<YYModel/YYModel.h>)
+	//如果存在YYModel库，从库查找.h
+	FOUNDATION_EXPORT double YYModelVersionNumber;
+	FOUNDATION_EXPORT const unsigned char YYModelVersionString[];
+	#import <YYModel/NSObject+YYModel.h>
+#else
+	//不存在YYModel库，从项目编译路径查找.h
+	#import "NSObject+YYModel.h"
+#endif
+
+#endif
+```
+
+## UIColor转UIImage并且圆角化处理
+
+使用`UIBezierPath`圆角
+
+```objc
+@implementation UIImage (XZHAddtions)
+
+- (UIImage *)makeCircularImageWithSize:(CGSize)size
+{
+	// 1. 图片占据矩形区域的大小
+	CGRect circleRect = (CGRect) {CGPointZero, size};
+  
+ 	//2. 开启一个绘图画布
+	UIGraphicsBeginImageContextWithOptions(circleRect.size, NO, 0);
+  
+	//3. 创建圆形的路径
+	UIBezierPath *circle = [UIBezierPath bezierPathWithRoundedRect:circleRect cornerRadius:circleRect.size.width/2];
+  
+  	//4.  剪裁路径之外的区域
+	[circle addClip];
+  
+	//5. 将Image绘制到路径中
+  	[self drawInRect:circleRect];
+  
+	//6. 路径边界样式
+#if StrokeRoundedImages
+  	circle.lineWidth = 1;
+	[[UIColor darkGrayColor] set];
+	[circle stroke];
+#endif
+  
+  	//7. 从画布中获取渲染得到的图像
+	UIImage *roundedImage = UIGraphicsGetImageFromCurrentImageContext();
+  
+	//8. 结束画布
+	UIGraphicsEndImageContext();
+  
+  	//9. 返回渲染得到的Image
+	return roundedImage;
+}
+
+@end
+```
+
+还可以通过使用CoreGraphics定义`CGPathRef`完成，代码稍微复杂点。
+
+## 不同类型的`dispatch_queue_t`、`main thread`、`thread pool`他们之间的联系与区别
+
+<img src="./gcd1.png" alt="" title="" width="700"/>
+
+## 一个`dispatch_queue_t`对应多个个`thread`？
+
+<img src="./gcd2.png" alt="" title="" width="700"/>
+
+<img src="./gcd3.jpeg" alt="" title="" width="700"/>
+
+### 串行队列
+
+- (1) async、创建且只创建`1个`子线程
+- (2) sync、不使用子线程，而是使用当前线程执行，并且**同步等待**当前线程**执行完毕**，`可以立马拿到返回值`，才会让其他线程进入执行，注意可能会发生线程死锁
+
+
+### 并发队列
+
+- (1) async、创建`n个`线程，会复用线程，多少个由GCD底层决定
+- (2) sync、同上
+
+### 对二种队列分别sync、async的总结
+
+<img src="./gcd4.jpg" alt="" title="" width="700"/>
+
+### 创建`dispatch_queue_t`，也就等同于创建`thread`，那么线程多的影响
+
+<img src="./gcd6.png" alt="" title="" width="700"/>
+
+## 使用GCD来完成多线程同步的模板
+
+### 主要的三点
+
+- (1) 使用 `concurrent queue` 并发队列
+- (2) 对于`读取` >>> `dispatch async`
+- (3) 对于`写` >>> ``dispatch barrier async`
+
+### 代码模板
+
+```objc
+//1. 并发队列
+dispatch_queue_t concurrentDiapatchQueue=dispatch_queue_create("com.test.queue", DISPATCH_QUEUE_CONCURRENT);
+	
+//2. 并发无序的任务
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"1 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"2 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"3 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"4 - thread: %@", [NSThread currentThread]);});
+	
+//3. 需要等待按照循序执行的任务
+dispatch_barrier_async(concurrentDiapatchQueue, ^{
+    sleep(5); NSLog(@"停止5秒我是同步执行 - thread: %@", [NSThread currentThread]);
+});
+	
+//4. 并发无序的任务
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"6 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"7 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"8 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"9 - thread: %@", [NSThread currentThread]);});
+dispatch_async(concurrentDiapatchQueue, ^{NSLog(@"10 - thread: %@", [NSThread currentThread]);});
+```
+
+<img src="./gcd5.jpg" alt="" title="" width="700"/>
+
+## 使用`dispatch_semephore_t`来让一段异步代码强制性的同步执行
+
+
+信号值为1，可用来同步多线程。如果为n，可控制同时最大并发n个线程。
+
+
+按照执行顺序1、2、3....标记代码的流程。
+
+```objc
+//1. 【注意】信号量初始化为0，并不是1
+dispatch_semephore_t semephore = dispatch_semaphore_create(0);
+	
+NSString *name = nil;
+
+//2. 开始异步任务
+dispatch_async(dispatch_get_main_queue(), ^{
+
+	//4. 模拟异步任务
+    name  = [self.name copy];
+    
+    //5. 异步任务完成之后，发出信号通知线程往下走
+    dispatch_semaphore_signal(semephore);
+});
+    
+//3. 卡住主线程往下走，等待Block执行完毕再往下走
+dispatch_semaphore_wait(semephore, DISPATCH_TIME_FOREVER);
+
+//6. 一直等到信号值为1，才会走到下面的代码
+NSLog(@"name = %@", name);
+```
+
+## 在`for/while`等循环中`加锁`时，需要使用`tryLock`，不能使用`lock`，否则可能会出现线程死锁
+
+```objc
+while (!finish) {
+
+    //TODO: 防止在循环中使用pthread_mutex_lock()出现线程死锁，前面的锁没有解除，又继续加锁
+    //pthread_mutex_trylock(): 尝试获取锁，获取成功之后才加锁，否则不执行加锁
+    
+    if (pthread_mutex_trylock(&_lock) == 0) {//获取锁成功，并执行加锁
+    
+        // 缓存数据读写
+        //.....
+        
+        //解锁
+        pthread_mutex_unlock(&_lock);
+        
+    } else {
+    
+        //获取锁失败，让线程休眠10秒后再执行解锁
+        usleep(10 * 1000);
+    }
+    
+    //解锁
+    pthread_mutex_unlock(&_lock);
+}
+```
+
+
+注意是执行`加锁`处理的才需要使用`tryLock`。
+
+## 使用原子属性OSAtomic完成多线的排队等待执行
+
+分为32位于64位，对整形变量，在多线程环境下，使用原子性，完成多线程的排队按照顺序的存取。
+
+```c
+OSAtomicAdd32(); 加上一个数
+OSAtomicAdd32Barrier(); 加上一个数，并使用一个栅栏来防止多线程
+OSAtomicIncrement32(); 变量自增
+OSAtomicIncrement32Barrier(); 变量自增，并使用一个栅栏来防止多线程
+OSAtomicDecrement32(); 变量自减
+OSAtomicDecrement32Barrier(); 变量自减，并使用一个栅栏来防止多线程
+```
+
+常用也就这几个了。

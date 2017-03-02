@@ -2,7 +2,7 @@
 
 ### 组织结构
 
-![](http://i1.piimg.com/4851/42558425db6fbe0d.png)
+<img src="./gcd1.png" alt="" title="" width="700"/>
 
 可以看到分为三层:
 
@@ -30,7 +30,7 @@
 
 ## dispatch queue 换算为多少个 thread ？
 
-![](http://i1.piimg.com/4851/2427128a9d1662ac.png)
+<img src="./gcd2.png" alt="" title="" width="700"/>
 
 ### `一个`serial dispatch queue 实例 == `一个`thread实例
 
@@ -346,7 +346,7 @@ dispatch_sync(queue, ^{
 
 ### GCD Queue Async sync 小结
 
-![](http://a2.qpic.cn/psb?/V11ePBui3l2qGa/mfvtHS8pFneveCrP28kf30LnTHHACBf.FI0Q37nPRXw!/b/dHgBAAAAAAAA&bo=sQKAAhsD4gIFCOI!&rf=viewer_4)
+<img src="./gcd4.jpg" alt="" title="" width="700"/>
 
 - (1) `dispatch_sync()`在任何对列下都是保持如下
 	- **不创建新的线程**

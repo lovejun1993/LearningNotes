@@ -742,7 +742,7 @@ void dispatch_barrier_async(dispatch_queue_t queue, dispatch_block_t block);
 - (3) 再`单独`的去执行这个`barrier`块代码
 - (4) 等待`barrier`块代码执行完毕之后，才会开始执行后面的block块代码
 
-![](http://p1.bpimg.com/567571/f6640190b47210e7.jpg)
+<img src="./gcd5.jpg" alt="" title="" width="700"/>
 
 
 ### `dispatch_barrier_async`来同步等待`concurrent queue`中的一个队列中的block执行

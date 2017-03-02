@@ -1,37 +1,5 @@
 ## struct应用一、struct作为多个参数的打包器Context
 
-分为：方法获取参数集合、方法回传参数集合
-
-```c
-typedef struct Context {
-    int     arg1;
-    char    *arg2;
-    float   arg3;
-    void    *arg4;
-}Context;
-
-void func6(Context *ctx) {
-    
-    //1. 从Context实例获取所有的参数
-    int     arg1 = ctx->arg1;
-    char    *arg2 = ctx->arg2;
-    float   arg3 = ctx->arg3;
-    void    *arg4 = ctx->arg4;
-    
-    //2. 操作所有的参数处理
-}
-
-void func7(int x, Context *ctx) {
-    char a[] = "hahaha";
-    
-    // 将处理后的参数，设置到ctx回传出去
-    ctx->arg1 = 1;
-    ctx->arg2 = a;
-    ctx->arg3 = 19.23;
-    ctx->arg4 = (void*)"haha";
-    
-}
-```
 
 ## struct应用二、CoreFoundation Array/Set/Dic遍历时，struct传入作为公共访问的内存数据
 

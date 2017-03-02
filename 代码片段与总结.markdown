@@ -10,6 +10,34 @@ expr @import UIKit
 open ~/Library/Application\ Support/Developer/Shared/Xcode/Plug-ins/
 ```
 
+
+## 苹果开源代码
+
+```
+https://opensource.apple.com/tarballs/CF/
+https://github.com/opensource-apple/CF
+https://github.com/opensource-apple/objc4
+```
+
+## 记录下苹果文档查询的路径:
+
+```
+https://developer.apple.com/search/?q=
+```
+
+## 一段代码执行时间计算
+
+```c
+int count = 100000;
+double date_s = CFAbsoluteTimeGetCurrent();
+
+......
+
+double date_current = CFAbsoluteTimeGetCurrent() - date_s;
+NSLog(@"consumeTime: %f μs",date_current * 11000 * 1000);
+```
+
+
 ## Macdown 常用语法
 
 ```
@@ -32,82 +60,6 @@ open ~/Library/Application\ Support/Developer/Shared/Xcode/Plug-ins/
 
 ```
 <img src="./" alt="" title="" width="700"/>
-```
-
-## `objc_msgSend()` 函数类型转换的格式
-
-```
-((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
-```
-
-小结下c/c++函数指针强转的格式规律：
-
-```c
-#include <iostream>
-using namespace std;
-
-//1. 
-void work(void *self, char *sel) {
-    
-}
-
-//2.
-int work(void *self, char *sel ,int x) {
-    return 1;
-}
-
-//3.
-bool work(void *self, char *sel ,int x, int y) {
-    return true;
-}
-
-//4.
-string work(void *self, char *sel ,int x, int y, int z) {
-        return string("Hello world~!!");
-}
-```
-
-如上4个c++重载函数的函数指针类型如下：
-
-```c
-返回值类型 (*类型名字)(函数的参数列表)
-
-//1. 
-void    (*funcP1)(void *self, char *sel);
-
-//2.
-int     (*funcP2)(void *self, char *sel ,int x);
-
-//3.
-bool    (*funcP3)(void *self, char *sel ,int x, int y);
-
-//4.
-string  (*funcP4)(void *self, char *sel ,int x, int y, int z);
-```
-
-通过一个函数的指针变量，调用指向的函数:
-
-```c
-void test() {
-    
-    void *ptr = NULL;
-    char sel[] = "sel";
-    
-    // (返回值类型 (*)(函数的参数列表)函数指针变量)(传递给方法的形参列表)；
-    
-    //1.
-    ((void (*)(void *, char *))work)(ptr, sel);
-    
-    //2.
-    int ret1 = ((int (*)(void *, char *, int))work)(ptr, sel, 19);
-    
-    //3.
-    bool ret2 = ((bool (*)(void *, char *, int, int))work)(ptr, sel, 19, 20);
-    
-    //4.
-    string ret3 = ((string (*)(void *, char *, int, int, int))work)(ptr, sel, 19, 20, 21);
-    
-}
 ```
 
 ## 参数长度不固定 >>> `va_list`
@@ -281,22 +233,6 @@ UITextField *filed = [UITextField new];
 }
 ```
 
-
-## 重写`-[UIView setFrame:]`方法，让系统计算完成的frame再进行二次调整
-
-```objc
-- (void)setFrame:(CGRect)frame {
-    
-    //1. 对系统计算完成传入的frame进行内部调整
-    CGRect rect = frame;
-    rect.size.width += 100;//对宽度调整增加100
-    
-    //2. 最后让系统设置我们修改过的frame
-    [super setFrame:rect];
-}
-```
-
-
 ## 后台任务 UIBackgroundTaskIdentifier
 
 ```objc
@@ -441,203 +377,6 @@ typedef struct Person {
 
 ....省略实现，可以使用sqlite、文件来存放缓存数据。
 
-
-## TableView 单选、多选
-
-- Cell.h
-
-```
-@interface LTableViewCell : UITableViewCell{
-
-	// 标记Cell是否被选中
-    BOOL			m_checked;
-    
-    // 选中的图片
-    UIImageView*	m_checkImageView;
-}
-
-//修改选中状态
-- (void)setChecked:(BOOL)checked;
-
-@end
-```
-
-- Cell.m
-
-```
-@implementation LTableViewCell
-
-- (id)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier
-{
-    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
-    if (self) {
-    
-        // Initialization code
-        [self creat];
-    }
-    return self;
-}
-
-//初始化选中图片View
-- (void)creat {
-
-    if (m_checkImageView == nil)
-    {	
-    
-    	//默认使用未选中的图片
-        m_checkImageView = [[UIImageView alloc] initWithImage:[UIImage imageNamed:@"Unselected.png"]];
-        m_checkImageView.frame = CGRectMake(10, 10, 29, 29);
-        [self addSubview:m_checkImageView];
-    }
-}
-
-
-
-- (void)setChecked:(BOOL)checked {
-	
-    if (checked)
-	{
-		//选中后修改为的图片
-		m_checkImageView.image = [UIImage imageNamed:@"Selected.png"];
-		self.backgroundView.backgroundColor = [UIColor colorWithRed:223.0/255.0 green:230.0/255.0 blue:250.0/255.0 alpha:1.0];
-	}
-	else
-	{
-	
-		//取消选中后修改为的图片
-		m_checkImageView.image = [UIImage imageNamed:@"Unselected.png"];
-		self.backgroundView.backgroundColor = [UIColor whiteColor];
-	}
-	
-	//保存当前选中状态
-	m_checked = checked;
-}
-
-- (void)setSelected:(BOOL)selected animated:(BOOL)animated
-{
-    [super setSelected:selected animated:animated];
-
-    // Configure the view for the selected state
-    //.....
-}
-
-@end
-```
-
-- TableViewController.m
-
-```
-@interface ViewController () <UITableViewDataSource,UITableViewDelegate>
-{
-	//1. 
-    UITableView *table;
-    
-    //2. 记录所有Cell对应的NSIndexPath对应的选中状态
-    NSMutableArray *contacts;
-    
-    //3. 全选按钮
-    UIButton *button;
-}
-@end
-```
-
-```
-@implementation ViewController
-
-//根据数据源数组长度，创建字典数组
-- (void)createContactDictWithDataSourceLength:(NSInteger)length 
-{
-	for (int i = 0; i <length; i++) {
-	
-		//1.
-        NSMutableDictionary *dic = [NSMutableDictionary dictionary];
-        
-        //2. 默认未选中状态
-        [dic setValue:@"NO" forKey:@"checked"];
-        
-        //3. 
-        [contacts addObject:dic];
-    }
-}
-
-- (void)addAllSelectButton {
-	
-	//1. 
-	button = [UIButton buttonWithType:UIButtonTypeRoundedRect];
-	
-	//2. 
-    [button setTitle:@"全选" forState:UIControlStateNormal];
-    
-    //3.
-    button.frame = CGRectMake(10, 10, 100, 50);
-    
-    //4.
-    [button addTarget:self action:@selector(allSelect:) forControlEvents:UIControlEventTouchUpInside];
-    
-    //5.
-    [self.view addSubview:button];
-}
-
-//点击全选后的处理方法
-- (void)allSelect:(UIButton*)sender {
-
-	//1. 获取所有的可见Cell的NSIndexPath
-    NSArray *anArrayOfIndexPath = [NSArray arrayWithArray:[table indexPathsForVisibleRows]];
-    
-    for (int i = 0; i < [anArrayOfIndexPath count]; i++) {
-    	//1.1 
-        NSIndexPath *indexPath= [anArrayOfIndexPath objectAtIndex:i];
-        
-        //1.2
-        LTableViewCell *cell = (LTableViewCell*)[table cellForRowAtIndexPath:indexPath];
-        
-        //1.3
-        NSUInteger row = [indexPath row];
-	
-		//1.4 获取对应NSIndexPath的记录选中状态字典
-        NSMutableDictionary *dic = [contacts objectAtIndex:row];
-        
-        //1.5 改变全选按钮显示的文字，并修改选中状态
-        if ([[[(UIButton*)sender titleLabel] text] isEqualToString:@"全选"]) 
-        {	
-        	 //设置为选中
-            [dic setObject:@"YES" forKey:@"checked"];
-            
-            //通知Cell更改选中图片
-            [cell setChecked:YES];
-            
-        }else {
-        
-        	//设置为未选中
-            [dic setObject:@"NO" forKey:@"checked"];
-            
-            //通知Cell更改选中图片
-            [cell setChecked:NO];
-        }
-    }
-    
-    //2 设置不可见部分的Cell的选中状态、按钮的标题文字
-	if ([[[(UIButton*)sender titleLabel] text] isEqualToString:@"全选"])
-    {
-        for (NSDictionary *dic in contacts) {
-            [dic setValue:@"YES" forKey:@"checked"];
-        }
-        
-         [(UIButton*)sender setTitle:@"取消" forState:UIControlStateNormal];
-         
-    } else {
-    
-        for (NSDictionary *dic in contacts) {
-            [dic setValue:@"NO" forKey:@"checked"];
-        }
-        
-        [(UIButton*)sender setTitle:@"全选" forState:UIControlStateNormal];
-    }
-}
-
-
-@end
-```
 
 ## UITableView在没有数据List、没有网络、给出一个默认图片作为背景
 
@@ -1005,40 +744,6 @@ NS_ENUM(NSInteger)
 };
 ```
 
-## `__has_include(库/头文件.h)`判断是否导入某个静态库
-
-```c
-#if __has_include(<sqlite3.h>)
-//从库中查找 .h
-#import <sqlite3.h>
-#else
-//从编译路径中查找 .h
-#import "sqlite3.h"
-#endif
-```
-
-YYModel.h中的写法
-
-
-```objc
-//是否有 __has_include 这个宏
-#ifdef __has_include 
-
-#if __has_include(<YYModel/YYModel.h>)
-	//如果存在YYModel库，从库查找.h
-	FOUNDATION_EXPORT double YYModelVersionNumber;
-	FOUNDATION_EXPORT const unsigned char YYModelVersionString[];
-	#import <YYModel/NSObject+YYModel.h>
-	#import <YYModel/YYClassInfo.h>
-#else
-	//不存在YYModel库，从项目编译路径查找.h
-	#import "NSObject+YYModel.h"
-	#import "YYClassInfo.h"
-#endif
-
-#endif
-```
-
 ## 解决手动的为每个属性或每个方法都去指定nonnull和nullable修饰符
 
 - 苹果为了减轻我们的工作量，专门提供了两个宏：	
@@ -1081,83 +786,6 @@ NS_ASSUME_NONNULL_END
 
 ```objc
 NSAssert(NO, "子类必须要实现APIManager这个protocol。");
-```
-
-
-## UIColor转UIImage并且圆角化处理
-
-- 使用CALayer圆角处理
-
-```objc
-- (UIImage *)makeRoundedImageWithColor:(int)rgbValue size:(CGSize)size radius:(float)radius {
-    CGRect rect = CGRectMake(0, 0, size.width, size.height);
-    
-    UIColor *color = UIColorWithRGB(rgbValue);
-    if (!color || color == [UIColor clearColor]) {
-        return nil;
-    }
-    
-    //Image Context，Color >>> Image
-    UIGraphicsBeginImageContext(rect.size);
-    CGContextRef context = UIGraphicsGetCurrentContext();
-    CGContextSetFillColorWithColor(context, [UIColorWithRGB(rgbValue) CGColor]);
-    CGContextFillRect(context, rect);
-    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    //CALayer 圆角处理Image
-    CALayer *imageLayer = [CALayer layer];
-    imageLayer.frame = CGRectMake(0, 0, image.size.width,image.size.height);
-    imageLayer.contents = (id)image.CGImage;
-    imageLayer.masksToBounds = YES;
-    imageLayer.cornerRadius = radius;
-    
-    //获取圆角后的Image
-    UIGraphicsBeginImageContext(image.size);
-    [imageLayer renderInContext:UIGraphicsGetCurrentContext()];
-    UIImage *roundedImage = UIGraphicsGetImageFromCurrentImageContext();
-    //    CGContextSetFillColorWithColor(context, [UIColorWithRGB(rgbValue)1 CGColor]);
-    UIGraphicsEndImageContext();
-    
-    return roundedImage;
-}
-```
-
-- 使用UIBezierPath圆角
-
-```objc
-- (UIImage *)makeCircularImageWithSize:(CGSize)size
-{
-  // make a CGRect with the image's size
-  CGRect circleRect = (CGRect) {CGPointZero, size};
-  
-  // begin the image context since we're not in a drawRect:
-  UIGraphicsBeginImageContextWithOptions(circleRect.size, NO, 0);
-  
-  // create a UIBezierPath circle
-  UIBezierPath *circle = [UIBezierPath bezierPathWithRoundedRect:circleRect cornerRadius:circleRect.size.width/2];
-  
-  // clip to the circle
-  [circle addClip];
-  
-  // draw the image in the circleRect *AFTER* the context is clipped
-  [self drawInRect:circleRect];
-  
-  // create a border (for white background pictures)
-#if StrokeRoundedImages
-  circle.lineWidth = 1;
-  [[UIColor darkGrayColor] set];
-  [circle stroke];
-#endif
-  
-  // get an image from the image context
-  UIImage *roundedImage = UIGraphicsGetImageFromCurrentImageContext();
-  
-  // end the image context since we're not in a drawRect:
-  UIGraphicsEndImageContext();
-  
-  return roundedImage;
-}
 ```
 
 ## 系统版本宏
@@ -2025,6 +1653,34 @@ _productFrames = [productsFrame copy];
     return CGRectContainsPoint(bounds, point);
 }
 
+
+@end
+```
+
+## 单例模板
+
+```c
+@implementation Tool
+
++ (instancetype)sharedInstance {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        _instance = [[self alloc] init];
+    });
+    return _instance;
+}
+
++ (instancetype)allocWithZone:(struct _NSZone *)zone {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        _instance = [super allocWithZone:zone];
+    });
+    return _instance;
+}
+
+- (id)copyWithZone:(NSZone *)zone {
+    return _instance;
+}
 
 @end
 ```

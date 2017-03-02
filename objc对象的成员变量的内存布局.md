@@ -1,8 +1,7 @@
-## 使用Java/C++中去定义实例变量的代码形式，使用OC的语法实现如下:
+## objc对象/c struct实例中，实例变量/成员变量的`内存布局` 规则:
+
 
 ```objc
-#import <Foundation/Foundation.h>
-
 @interface Cat : NSObject {
 
     @public
@@ -12,39 +11,12 @@
     @private
     NSString *_cid;
 }
-
 @end
 @implementation Cat
 @end
 ```
 
-那么在另外一个类对象方法中使用Cat对象的代码
-
-```objc
-#import "Cat.h"
-
-@implementation ViewController
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    
-    Cat *c = [Cat new];
-    
-    c->_firstName = @"Li";
-    c->_lastName = @"Ming";
-    
-    c->_pid = @"111";//这句会报错，私有实例变量，外部不允许方法
-}
-
-@end
-```
-
-看起来这种写法很方便也很安全:
-
-- (1) 方便是外部直接通过`对象->实例变量`就可以对Cat对象的`公开实例变量`进行读写
-- (2) 安全是不能够对Cat对象的`私有实例变量`进行访问
-
-但是实际上在`Objective-C`语言写的代码中却很少见到这么操作实例变量Ivar的，原因是`Objective-C对象Ivar的内存布局`的原因。
+如上写法定义的实例变量的`地址布局`，在程序代码`编译期间`就已经确定了。那么如果运行时去修改这个布局，就会导致Ivar地址错乱，出现存取数据错误。
 
 
 ## 每个 objc 对象都有相同的结构
@@ -356,14 +328,41 @@ if(class_addIvar(MyClass, "itest", sizeof(NSString *), 0, "@")) {
 objc_registerClassPair(MyClass);
 ```
 
-这几个步骤已经由运行时runtime库帮我们做了。runtime自动读取我们的.h与.m，并使用如下这些函数将我们编写的类注册到运行时系统环境，以便后续使用:
+这几个步骤已经由运行时runtime库帮我们做了。runtime自动读取我们的`xxx.h与xxx.m`，并识别出所有的`@interface ... @end`与`@implementation ...@end`。
 
-- (1) `objc_allocateClassPair()` 创建一个类
-- (2) `class_addIvar()` 添加实例变量
-- (3) `class_addMethod()` 添加实例方法
-- (4) `objc_registerClassPair()` 将类注册到运行时环境，这一步可能就会进行Ivar的内存布局计算了，之后就无法再改变了，所以这就是为什么之前给Cat类添加Ivar不成功的原因
+最后使用如下这些函数将我们编写的类注册到运行时系统环境:
 
-## 对于已经执行`objc_registerClassPair()`的类不能够使用`class_addIvar()`来添加实例变量，这是否就是对之前的可能会出现Ivar地址错乱问题的规避了？
+```c
+//1. 创建一个运行时识别的Class
+objc_allocateClassPair(Class superclass, 
+					   const char *name, 
+					   size_t extraBytes);
+
+//2. 添加实例变量
+BOOL class_addIvar(Class cls, 
+				   const char *name, 
+				   size_t size, 
+				   uint8_t alignment,
+				    const char *types);
+
+//3. 添加实例方法
+BOOL class_addMethod(Class cls, 
+					 SEL name, 
+					 IMP imp, 
+					 const char *types);
+					 
+//4. 添加实现的协议
+BOOL class_addProtocol(Class cls, Protocol *protocol);
+
+//5. 将处理完毕的Class注册到运行时系统，之后就无法再对其修改Ivar
+void objc_registerClassPair(Class cls);
+```
+
+当执行完最后一步`objc_registerClassPair(Class cls)`，就会进行Ivar的内存布局计算了，之后就无法再改变了。
+
+所以这就是为什么之前给Cat类添加Ivar不成功的原因
+
+### 对于已经执行`objc_registerClassPair()`的类不能够使用`class_addIvar()`来添加实例变量，这是否就是对之前的可能会出现Ivar地址错乱问题的规避了？
 
 问题: 如果运行时动态给对象添加一个实例变量时，如果不重新计算所有实例变量的内存地址布局，就会导致实例变量的访问错位。
 
