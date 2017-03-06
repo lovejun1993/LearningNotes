@@ -101,7 +101,7 @@ object_getClass(被观察者对象) >>> 返回的是替换后的`中间类`
 - (7) 当对象移除属性观察者之后，该`对象的isa指针`又会`恢复`指向为`原始类`
 
 
-## `objc_msgSend()` 函数类型转换的格式
+##  `objc_msgSend()` 函数类型转换的格式
 
 ```
 ((void (*)(id, SEL)) (void *) objc_msgSend)(obj, sel1);
@@ -319,14 +319,6 @@ KVC首先根据`setValue:forKey:`传入的key，查找到对应的`Ivar`，这�
 
 除了第一步查找Ivar之外，后面都是直接绕过了objc的消息传递过程，直接对Ivar进行存取。
 
-## 使用`__unsafe_unretained`来修饰指向`必定不会被废弃`的对象的指针变量，不会由ARC系统附加做`retain/release`的处理，提高了运行速度
-
-- (1) 使用`__weak`修饰的指针变量指向的对象时，会将被指向的对象，自动注册到自动释放池，防止使用的时候被废弃，但是影响了代码执行效率
-
-- (2) 如果一个对象确定是不会被废弃，或者调用完成之前不会被废弃，就使用`__unsafe_unretained`来修饰指针变量
-
-- (3) `__unsafe_unretained`就是简单的拷贝`地址`，不进行任何的`对象内存管理`，即不修改retainCount
-
 ## 对 `NSArray/NSSet/NSDictionary` 容器对象进行遍历的时候，转为CoreFoundation容器对象，再进行遍历，效率会更高。这也是struct作为Context的一个应用场景。
 
 通常对于Foundation的写法:
@@ -417,7 +409,9 @@ void XZHCFDictionaryApplierFunction(const void *key, const void *value, void *co
 
 但是总体CF容器遍历的效率绝对比Foundation容器遍历高，因为省去了objc消息传递等很多步骤，直接就是c函数调用完成的。
 
-## struct应用场景2、作为多个参数的打包器Context
+## struct的一些妙用
+
+### struct应用场景2、作为多个参数的打包器Context
 
 
 分为：方法获取参数集合、方法回传参数集合
@@ -455,7 +449,7 @@ void func7(int x, Context *ctx) {
 }
 ```
 
-## struct应用场景3、位段结构体
+### struct应用场景3、位段结构体
 
 格式
 
@@ -515,6 +509,127 @@ struct __touchDelegate {
 
 后后面只需要根据位段结构体实例的对应成员变量值是0还是1，就可以判断是否实现了协议方法。
 
+
+## struct实例，去持有 Foundation对象，当struct实例废弃时，要让Foundation对象在子线程上异步释放废弃
+
+### 核心主要牵涉三个用于`c实例`与`objc对象`进行转换的东西
+
+一、`(__bridge_retained CoreFoundation实例)Foundation对象`
+
+- (1) Foundation对象 >>> CoreFoundation实例
+- (2) `[Foundation对象 retain]`
+
+二、`(__bridge_transfer Foundation对象)CoreFoundation实例`
+
+- (1) CoreFoundation实例 >>> Foundation对象 
+- (2) `[Foundation对象 release]`
+
+三、`__bridge` 
+
+- (1) Foundation对象 >>> CoreFoundation实例
+- (2) CoreFoundation实例 >>> Foundation对象 
+- (3) 不会执行任何的`retain/release`效果，仅仅只是类型的转换
+
+### 下面demo测试
+
+Foundation 类
+
+```objc
+@interface Dog : NSObject
+@property (nonatomic, copy) NSString *name;
+@end
+@implementation Dog
+- (void)dealloc {
+    NSLog(@"废弃Dog对象，name = %@ on thread = %@", _name, [NSThread currentThread]);
+}
+@end
+```
+
+struct实例 使用 `void*` 万能指针类型持有 Foundation对象
+
+```c
+typedef struct DogsContext {
+    void    *dogs;//持有oc数组对象
+}DogsContext;
+```
+
+ViewController测试代码
+
+```objc
+static DogsContext *_dogsCtx = NULL;
+
+@implementation ViewController
+
+// 测试结构体实例持有oc对象
+- (void)testARCBridge1 {
+    
+    //1. c结构体实例
+    _dogsCtx = malloc(sizeof(DogsContext));
+    _dogsCtx->dogs = NULL;
+    
+    //2. 创建测试的oc数组对象
+    NSMutableArray *dogs = [NSMutableArray new];
+    for (int i = 0; i < 3; i++) {
+        Dog *dog = [Dog new];
+        dog.name = [NSString stringWithFormat:@"name_%d", (i + 1)];
+        NSLog(@"创建Dog对象，name = %@", dog.name);
+        [dogs addObject:dog];
+    }
+    
+    //3. struct实例 持有 NSFoundation对象，并对oc对象进行retain，防止oc对象被废弃
+    _dogsCtx->dogs = (__bridge_retained void*)dogs;
+}
+
+// 测试从结构体实例中取出oc对象使用，然后不再需要的时候全部一起废弃
+- (void)testARCBridge2 {
+    
+    //1. 先取出c struct实例持有的 NSFoundation对象使用，不进行任何retain/release
+    NSMutableArray *array1 = (__bridge NSMutableArray*)_dogsCtx->dogs;
+    for (Dog *dog in array1) {
+        NSLog(@"使用Dog对象，name = %@", dog.name);
+    }
+    
+    //2. 释放struct实例持有的NSMutableArray数组，继而释放掉了NSMutableArray数组持有的所有的Dogs对象
+    //2.1 对oc数组对象进行release
+    NSMutableArray *array2 = (__bridge_transfer NSMutableArray*)_dogsCtx->dogs;
+    //2.2 解决结构体实例指向oc数组对象，并废弃结构体实例
+    _dogsCtx->dogs = NULL;
+    free(_dogsCtx);
+    _dogsCtx = NULL;
+    //2.3 子线程异步释放废弃oc数组内的其他子对象
+    dispatch_async(dispatch_get_global_queue(0, 0), ^{
+        [array2 class];
+    });
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+
+        [self testARCBridge1];
+    [self testARCBridge2];
+    
+    NSLog(@"");
+}
+
+@end
+```
+
+输出信息
+
+```
+2017-02-08 23:54:34.433 Test[1262:71331] 创建Dog对象，name = name_1
+2017-02-08 23:54:34.434 Test[1262:71331] 创建Dog对象，name = name_2
+2017-02-08 23:54:34.434 Test[1262:71331] 创建Dog对象，name = name_3
+
+2017-02-08 23:54:34.434 Test[1262:71331] 使用Dog对象，name = name_1
+2017-02-08 23:54:34.434 Test[1262:71331] 使用Dog对象，name = name_2
+2017-02-08 23:54:34.434 Test[1262:71331] 使用Dog对象，name = name_3
+
+2017-02-08 23:54:34.435 Test[1262:71700] 废弃Dog对象，name = name_1 on thread = <NSThread: 0x7ff0c8e68a50>{number = 2, name = (null)}
+2017-02-08 23:54:34.435 Test[1262:71700] 废弃Dog对象，name = name_2 on thread = <NSThread: 0x7ff0c8e68a50>{number = 2, name = (null)}
+2017-02-08 23:54:34.435 Test[1262:71700] 废弃Dog对象，name = name_3 on thread = <NSThread: 0x7ff0c8e68a50>{number = 2, name = (null)}
+```
+
+
 ## objc对象的成员变量的内存布局
 
 ```
@@ -546,7 +661,7 @@ objc对象的成员变量的内存布局.md
 }  
 ```
 
-##  在自定义线程上使用释放池
+## 在自定义线程上使用释放池
 
 ```objc
 + (NSThread *)networkRequestThread {
@@ -628,7 +743,7 @@ static void XZHCFRunLoopObserverCallBack(CFRunLoopObserverRef observer, CFRunLoo
 
 没有指定`nonatomic`，默认就是`atomic`原子属性同步多线程。
 
-## 如果一个objc方法实现使用次数非常多，则可以使用 `methodForSelector:` 获取该方法 IMP，然后缓存起来，以后每次调用该oc函数时，直接使用IMP。这种技术成为IMP Caching
+## `IMP Caching`: 使用 `methodForSelector:` 获取objc方法 IMP，然后缓存起来。以后每次调用该oc函数时，直接使用IMP
 
 首先，有一个测试类:
 
@@ -792,125 +907,6 @@ msgSends-901
 
 所以，`_objc_msgForward`这个指针指向的c函数的作用，就是进入到消息转发阶段，从阶段1到阶段2，如果最后阶段仍然无法处理消息，就产生异常让程序退出。
 
-## struct实例去持有 Foundation对象，当struct实例废弃时，要让Foundation对象在子线程上异步释放废弃
-
-### 核心主要牵涉三个用于`c实例`与`objc对象`进行转换的东西
-
-一、`(__bridge_retained CoreFoundation实例)Foundation对象`
-
-- (1) Foundation对象 >>> CoreFoundation实例
-- (2) `[Foundation对象 retain]`
-
-二、`(__bridge_transfer Foundation对象)CoreFoundation实例`
-
-- (1) CoreFoundation实例 >>> Foundation对象 
-- (2) `[Foundation对象 release]`
-
-三、`__bridge` 
-
-- (1) Foundation对象 >>> CoreFoundation实例
-- (2) CoreFoundation实例 >>> Foundation对象 
-- (3) 不会执行任何的`retain/release`效果，仅仅只是类型的转换
-
-### 下面demo测试
-
-Foundation 类
-
-```objc
-@interface Dog : NSObject
-@property (nonatomic, copy) NSString *name;
-@end
-@implementation Dog
-- (void)dealloc {
-    NSLog(@"废弃Dog对象，name = %@ on thread = %@", _name, [NSThread currentThread]);
-}
-@end
-```
-
-struct实例 使用 `void*` 万能指针类型持有 Foundation对象
-
-```c
-typedef struct DogsContext {
-    void    *dogs;//持有oc数组对象
-}DogsContext;
-```
-
-ViewController测试代码
-
-```objc
-static DogsContext *_dogsCtx = NULL;
-
-@implementation ViewController
-
-// 测试结构体实例持有oc对象
-- (void)testARCBridge1 {
-    
-    //1. c结构体实例
-    _dogsCtx = malloc(sizeof(DogsContext));
-    _dogsCtx->dogs = NULL;
-    
-    //2. 创建测试的oc数组对象
-    NSMutableArray *dogs = [NSMutableArray new];
-    for (int i = 0; i < 3; i++) {
-        Dog *dog = [Dog new];
-        dog.name = [NSString stringWithFormat:@"name_%d", (i + 1)];
-        NSLog(@"创建Dog对象，name = %@", dog.name);
-        [dogs addObject:dog];
-    }
-    
-    //3. struct实例 持有 NSFoundation对象，并对oc对象进行retain，防止oc对象被废弃
-    _dogsCtx->dogs = (__bridge_retained void*)dogs;
-}
-
-// 测试从结构体实例中取出oc对象使用，然后不再需要的时候全部一起废弃
-- (void)testARCBridge2 {
-    
-    //1. 先取出c struct实例持有的 NSFoundation对象使用，不进行任何retain/release
-    NSMutableArray *array1 = (__bridge NSMutableArray*)_dogsCtx->dogs;
-    for (Dog *dog in array1) {
-        NSLog(@"使用Dog对象，name = %@", dog.name);
-    }
-    
-    //2. 释放struct实例持有的NSMutableArray数组，继而释放掉了NSMutableArray数组持有的所有的Dogs对象
-    //2.1 对oc数组对象进行release
-    NSMutableArray *array2 = (__bridge_transfer NSMutableArray*)_dogsCtx->dogs;
-    //2.2 解决结构体实例指向oc数组对象，并废弃结构体实例
-    _dogsCtx->dogs = NULL;
-    free(_dogsCtx);
-    _dogsCtx = NULL;
-    //2.3 子线程异步释放废弃oc数组内的其他子对象
-    dispatch_async(dispatch_get_global_queue(0, 0), ^{
-        [array2 class];
-    });
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-
-        [self testARCBridge1];
-    [self testARCBridge2];
-    
-    NSLog(@"");
-}
-
-@end
-```
-
-输出信息
-
-```
-2017-02-08 23:54:34.433 Test[1262:71331] 创建Dog对象，name = name_1
-2017-02-08 23:54:34.434 Test[1262:71331] 创建Dog对象，name = name_2
-2017-02-08 23:54:34.434 Test[1262:71331] 创建Dog对象，name = name_3
-
-2017-02-08 23:54:34.434 Test[1262:71331] 使用Dog对象，name = name_1
-2017-02-08 23:54:34.434 Test[1262:71331] 使用Dog对象，name = name_2
-2017-02-08 23:54:34.434 Test[1262:71331] 使用Dog对象，name = name_3
-
-2017-02-08 23:54:34.435 Test[1262:71700] 废弃Dog对象，name = name_1 on thread = <NSThread: 0x7ff0c8e68a50>{number = 2, name = (null)}
-2017-02-08 23:54:34.435 Test[1262:71700] 废弃Dog对象，name = name_2 on thread = <NSThread: 0x7ff0c8e68a50>{number = 2, name = (null)}
-2017-02-08 23:54:34.435 Test[1262:71700] 废弃Dog对象，name = name_3 on thread = <NSThread: 0x7ff0c8e68a50>{number = 2, name = (null)}
-```
-
 ## 限制无限去创建 gcd dispatch queue
 
 YYDispatchQueuePool的核心几点:
@@ -963,347 +959,6 @@ YYDispatchQueuePool的核心几点:
 	- UI对象的属性值调整
 	- UI对象的创建
 	- UI对象的销毁（废弃）
-
-## 实现弱引用objc对象
-
-### 方法一、使用NSValue提供的方法
-
-```objc
-//1. NSValue弱引用方式包装一个objc对象
-NSValue *value = [NSValue valueWithNonretainedObject:@"objc对象"];
-
-//2. 从NSValue获取弱引用的objc对象
-id weakObj = [value nonretainedObjectValue];
-```
-
-### 方法二、借助Block对象，内部持有一个使用了`__weak`修饰的objc对象
-
-- (1) 返回值类型是id，参数类型是void，的block类型定义
-
-```c
-typedef id (^WeakReferenceBlcok)(void);
-```
-
-- (2) 将外界传入的需要弱引用处理的对象，借助block，进行`__weak`处理
-
-```c
-WeakReferenceBlcok makeWeakReference(id obj) {
-    
-    //1. 对外界传入的对象进行弱引用
-    id __weak weakObj = obj;
-    
-    //2. 返回一个Block，执行Block后，让外界拿到 __weak 处理后的弱引用用对象
-    return ^() {
-        return weakObj;
-    };
-}
-```
-
-- (3) 对NSMutableDictionary稍加封装，添加如上的处理代码
-
-```objc
-@interface XZHDic : NSObject {
-    NSMutableDictionary *_dic;//TODO: 初始化代码那些就不写了.....
-}
-
-- (void)weak_setObject:(id)anObject forKey:(NSString *)aKey;
-- (id)weak_getObjectForKey:(NSString *)key;
-
-@end
-@implementation XZHDic
-
-- (void)weak_setObject:(id)anObject forKey:(NSString *)aKey {
-    //1.
-    WeakReferenceBlcok block = makeWeakReference(anObject);
-    
-    //2.
-    [_dic setObject:block forKey:aKey];
-}
-
-- (id)weak_getObjectForKey:(NSString *)key {
-    //1.
-    WeakReferenceBlcok block = [_dic objectForKey:key];
-    
-    //2.
-    return (block ? block() : nil);
-}
-
-@end
-```
-
-### NSProxy定义weak属性 + 消息转发
-
-- (1) 抽象事物的接口
-
-```objc
-#import <Foundation/Foundation.h>
-
-@protocol Human <NSObject>
-- (void)run;
-@end
-```
-
-- (2) 一个具体实现类
-
-```objc
-#import <Foundation/Foundation.h>
-#import "Human.h"
-
-@interface XiaoMing : NSObject <Human>
-@end
-@implementation XiaoMing
-- (void)run {
-    NSLog(@"XiaoMing run....");
-}
-@end
-```
-
-- (3) NSProxy代理上面具体实现类的一个对象，并且使用weak修饰的属性
-
-```objc
-#import <Foundation/Foundation.h>
-#import "Human.h"
-
-@interface XZHProxy : NSProxy <Human>
-
-/**
- *  被代理的弱引用对象
- */
-@property (nonatomic, weak, readonly) id<Human> target;
-
-/**
- *  传入要被弱引用的对象
- */
-- (instancetype)initWithTarget:(id<Human>)target;
-
-@end
-@implementation XZHProxy
-
-- (instancetype)initWithTarget:(id<Human>)target {
-    _target = target;
-    return self;
-}
-
-- (id)forwardingTargetForSelector:(SEL)selector {
-    return _target;
-}
-
-- (BOOL)respondsToSelector:(SEL)aSelector {
-    return [_target respondsToSelector:aSelector];
-}
-
-@end
-```
-
-外界使用代码
-
-```objc
-//1. target
-XiaoMing *xiaoming = [[XiaoMing alloc] init];
-
-//2. Proxy
-XZHProxy *proxy = [[XZHProxy alloc] initWithTarget:xiaoming];
-
-//3. 使用Proxy
-[proxy run];
-```
-
-输出
-
-```
-2016-11-16 00:07:33.180 demo[9202:125702] XiaoMing run....
-```
-
-如上是之前的写法，但是最近看NSProxy的头文件，已经注释掉了`forwardingTargetForSelector:`这个方法的声明，说明已经无法使用了。
-
-只能通过使用NSProxy的消息转发阶段二来完成上面的代码的:
-
-- (1) `methodSignatureForSelector:`
-- (2) `forwardInvocation:`
-
-
-```objc
-@interface XZHWeakProxy : NSProxy
-@property (nonatomic, weak, readonly) id target;
-- (instancetype)initWithTarget:(id)target;
-@end
-@implementation XZHWeakProxy
-
-- (instancetype)initWithTarget:(id)target {
-    _target = target;
-    return self;
-}
-
-- (void)forwardInvocation:(NSInvocation *)invocation {
-    SEL sel = invocation.selector;
-    
-    // 从 _target 获取 method sign
-    NSMethodSignature *methodSign = [_target methodSignatureForSelector:sel];
-    
-    // 构造新的invoke
-    NSInvocation *newInvoke = [NSInvocation invocationWithMethodSignature:methodSign];
-    [newInvoke setSelector:sel];
-    [newInvoke setTarget:_target];
-    
-    // 设置Invoke参数
-    NSUInteger numArgs = [methodSign numberOfArguments];
-    for (NSUInteger index = 2; index < numArgs; index++) {//index=0是target, index=1是SEL
-        const char *type = [methodSign getArgumentTypeAtIndex:index];
-        switch (*type) {
-            case '@': {
-                id value = nil;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'c': {
-                char value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'C': {
-                unsigned char value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'B': {
-                BOOL value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 's': {
-                short value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'S': {
-                unsigned short value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'i': {
-                int value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'I': {
-                unsigned int value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'f': {
-                float value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'l': {
-                long value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'q': {
-                 long long value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'L': {
-                unsigned long value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'Q': {
-                unsigned long long value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case 'd': {
-                double value = 0;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case '#': {
-                Class value = NULL;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            case ':': {
-                SEL value = NULL;
-                [invocation getArgument:&value atIndex:index];
-                [newInvoke setArgument:&value atIndex:index];
-            }
-                break;
-            default:
-                break;
-        }
-    }
-    
-    [newInvoke invoke];
-}
-
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
-    if (_target) {
-        return [_target methodSignatureForSelector:sel];
-    } else {
-        return [super methodSignatureForSelector:sel];
-    }
-}
-
-- (BOOL)respondsToSelector:(SEL)aSelector {
-    if (_target) {
-        return [_target respondsToSelector:aSelector];
-    } else {
-        return [super respondsToSelector:aSelector];
-    }
-}
-
-@end
-```
-
-这样是可以通过继承NSProxy完成弱引用代理，但其实可以直接继承`NSObject`完成`假的`弱引用代理。
-
-```objc
-@interface ASWeakProxy : NSObject
-@property (nonatomic, weak, readonly) id target;
-+ (instancetype)weakProxyWithTarget:(id)target;
-@end
-@implementation ASWeakProxy
-
-- (instancetype)initWithTarget:(id)target
-{
-  if (self = [super init]) {
-    _target = target;
-  }
-  return self;
-}
-
-+ (instancetype)weakProxyWithTarget:(id)target
-{
-  return [[ASWeakProxy alloc] initWithTarget:target];
-}
-
-- (id)forwardingTargetForSelector:(SEL)aSelector
-{
-  return _target;
-}
-
-@end
-```
-
-这样又可以直接使用消息转发阶段二中的最简单的`forwardingTargetForSelector:`来完成消息转发了。
 
 
 ## `hitTest:withEvent:` 与 `pointInside:withEvent:`
@@ -1536,95 +1191,6 @@ Class object_getClass(id obj)
 }
 ```
 
-## objc对象的内存管理修饰符
-
-对应关系如下
-
-| 属性的内存管理修饰符 | 对象所有权修饰符 | 
-| :-------------: |:-------------:| 
-| assign | `__unsafe_unretained` | 
-| copy | `__strong`（首先是拷贝原始对象得到一个新的对象，然后再强引用新的对象） | 
-| retain | `__strong` | 
-| strong | `__strong` | 
-| unsafe_unretained | `__unsafe_unretained` | 
-| weak | `__weak` |
-
-### 最基础的对象内存管理修饰
-
-- `__weak`
-
-不会也不能持有指向的对象，即不会让指向的对象的retainCount++
-	
--  `__strong`
-
-	- (1) 释放已有的老对象，`[老对象 release]`，老对象retainCount--
-	- (2) 持有传入的新对象，`[新对象 retain]`，新对象retainCount++
-
-- `__unsafe_unretaind`
-
-直接使用地址去操作对象，不进行任何的内存管理操作。被修饰的指针变量，在对象被废弃掉时，不会被设置为nil。仍然强制使用`__unsafe_unretained`修饰的指针去操作废弃掉的对象，就会导致程序crash崩溃，报错 `EXC_BAD_ACCESS....异常`.
-
-- `__autoreleasing`
-
-就相当于如下代码，将对象注册到自动释放池。
-
-```objc
-NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-Dog *dog =[Dog new];
-[dog release];//将Dog对象加入到最近的pool对象中
-[pool release];
-```
-
-### 对于属性提供的额外几种
-	
-- copy 
-
-其实和strong/retain很相似的，`只是多一步拷贝`的操作，对于copy修饰的属性setter方法实际上做了如下三件事:
-
-```
-- (1) id newObj = [oldObj copy];
-- (2) [oldObj release];
-- (3) [newObj retain];
-```
-
-- assign:
-	- 一般使用一些基本数据类型的属性变量（int、float、bool...）
-	- 类似`__unsafe_unretaind`
-
-## 对象内部进行属性变读取时，尽量使用 `_varibale` 直接操作实例变量
-
-对于实例变量访问方式有如下两种：
-
-- 通过属性变量 `_variable` 来读写
-- 通过 `self.variable` 来读写
-
-
-### 通过 `对象.属性` 进行读写
-	
-- 可以`懒加载`的属性
-- **调用setter设置新值时，会触发KVO通知**
-- 设置新值时，会根据属性定义的`内存管理`对应的修饰规则
-	- assign、copy、weak、strong、`unsafe_unretained` ...
-- 还可以重写 setter与getter 方法，完成断点调试
-
-### 通过 `_属性名` 进行读写
-
-- `绕过`了属性定义的`内存管理`修饰
-- `绕过`了属性定义的`读写权限`修饰（可以使用KVC操作私有实例变量）
-- 无法触发KVO通知
-
-### 合理组合上面两种形式
-
-- (1) 对象内部，大多数情况下都应该如下
-	- `读`实例变量 >>> 使用 `_variable` 来读实例变量，避免每次进入消息发送进入class结构体中查询SEL对应的IMP
-	- `写`实例变量 >>> 使用 `self.属性名 = 新值` 来写数据，按照属性定义的内存管理修饰，以及提供KVO通知
-
-- (2) 对象内部，`initXxx`函数与`dealloc`函数中，总是应该是通过`_variable`进行`读和写`
-	- 因为`子类`可能重写属性的setter与getter方法实现
-	- 那么调用子类的setter时，就会导致父类方法中的某一些实例变量未能初始化，导致程序崩溃
-
-- (3)对于使用`懒加载`的属性，总应该是使用 `self.属性名`来进行`读`
-
 ## Cache缓存数据、在多线程环境下使用的代码模板
 
 ```objc
@@ -1797,6 +1363,282 @@ GPU >>> 大量进行图像渲染，少进行数据计算
 @end
 ```
 
+## objc对象的`释放`与`废弃`，是两个`不同的阶段`
+
+### 释放
+
+应该是释放对象的`持有`，即对objc对象发送`retain\release\autorelase`等消息，修改objc对象的`retainCount`值，但是对象的内存一直都还存在。
+
+释放持有的操作，是`同步`的。
+
+### 废弃
+
+当某个`空闲`时间，系统才会将内存的数据全部擦除干净，然后将这块内存`合并为系统未使用的内存`中。而此时如果程序继续访问该内存块，就会造成程序崩溃。
+
+内存的彻底`废弃`操作，是`异步`的，也就是说有一定的`延迟`。
+
+
+### 执行了`-[NSObject dealloc]`，并不是说对象所在内存就被`废弃`了。只是对于常理来说，这个对象已经`标记`为即将废弃，程序中也不要再继续使用了。
+
+
+```objc
+- (void)testMRC {
+
+    _mrc = [[MRCTest alloc] init];
+    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
+    
+    MRCTest *tmp1 = [_mrc retain];
+    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
+    
+    [_mrc release];
+    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
+    
+    [tmp1 release];
+    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
+    
+    //【重要】尝试多次输出retainCount
+    for (NSInteger i = 0; i < 10; i++) {
+        NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);//【重要】循环执行几次之后，崩溃到此行
+    }
+}
+```
+
+运行之后，结果崩溃到for循环中的第二次或第三次循环，`程序崩溃`报错如下:
+
+```
+thread 1:EXC_BAD_ACCESS .... 
+```
+
+释放掉对象之后，指向该对象的指针，仍然会保留在局部方法块的所在栈中，仍然是可以在短暂的时间内继续通过指针访问到对象。但是超过一定时间后，对象才会被彻底废弃掉，这个时候如果还去使用这个指针就会造成程序崩溃。
+
+那这样是说最终对象的内存废弃过程，是一个`异步`执行的吗？或者说有一定的`延迟时间`吗？
+
+是`延迟`的，因为最终对象内存会被擦除掉，并与系统内存合并到一起，所以这个过程确实是一个异步的。
+
+## 属性修饰符与对象所有权修饰符的关系
+
+| 属性声明时的修饰符 | 对象所有权修饰符 | 
+| :-------------: |:-------------:| 
+| assign | `__unsafe_unretained` | 
+| copy | `__strong`（首先是拷贝原始对象得到一个新的对象，然后再强引用新的对象，释放老的对象） | 
+| retain | `__strong` | 
+| strong | `__strong` | 
+| `unsafe_unretained` | `__unsafe_unretained` | 
+| weak | `__weak` | 
+
+
+### 对于属性提供的额外几种
+	
+- copy 
+
+其实和strong/retain很相似的，`只是多一步拷贝`的操作，对于copy修饰的属性setter方法实际上做了如下三件事:
+
+```
+- (1) id newObj = [oldObj copy];
+- (2) [oldObj release];
+- (3) [newObj retain];
+```
+
+- assign:
+	- 一般使用一些基本数据类型的属性变量（int、float、bool...）
+	- 类似`__unsafe_unretaind`
+
+## `__strong` 修饰对象的指针变量
+
+- (1) 会自动添加对象的`retain\release`的消息代码
+
+- (2) 持有与释放的原则
+	- 自己生成的对象，自己持有
+	- 非自己生成的对象，我也能持有
+	- 不再需要自己持有的对象时进行释放
+	- 非自己持有的对象无法释放
+
+##  `__unsafe_unretained` 
+
+### 内存管理原则
+
+- (1) `unsafe` 不安全，这点是与`weak`不同点，既不会自动赋值nil
+- (2) `unretained` 不会产生`强引用`持有，这是与`weak`的相同点
+- (3) **直接使用对象的地址，不管对象是否已经被废弃，都直接访问地址**
+
+所以，如果被访问的地址已经被废弃，可能造成崩溃。
+
+### 使用`__unsafe_unretained`来修饰指向`必定不会被废弃`的对象的指针变量，不会由ARC系统附加做`retain/release`的处理，提高了运行速度
+
+- (1) 使用`__weak`修饰的指针变量指向的对象时，会将被指向的对象，自动注册到自动释放池，防止使用的时候被废弃，但是影响了代码执行效率
+
+- (2) 如果一个对象确定是不会被废弃，或者调用完成之前不会被废弃，就使用`__unsafe_unretained`来修饰指针变量
+
+- (3) `__unsafe_unretained`就是简单的拷贝`地址`，不进行任何的`对象内存管理`，即不修改retainCount
+
+## `__autoreleasing`
+
+分析下`+[NSMutableArray array]`返回值对象处理:
+
+```objc
++ (id)array {
+
+	//1. 生成一个数组对象
+	id obj = objc_msgSend(NSMutableArray, @selector(alloc));
+	
+	//2. 执行对象的初始化init方法
+	obj = objc_msgSend(obj, @selector(init));
+	
+	//3. 返回一个autorelease的返回值
+	return objc_autoreleaseReturnValue(obj);
+}
+```
+
+## 使用`__weak`指针指向的对象时，会自动将对象注册到一个自动释放池，防止提早废弃
+
+那么为什么要这样的了？因为`__weak`变量:
+
+- (1) 支持有对象的一个`弱引用`
+- (2) 不能保证访问该对象的整个过程中，对象一定不会被废弃
+
+所以，通过将弱引用的对象，注册到autoreleasePool中，从而保证整个操作过程（autoreleasePool结束之前），弱引用对象都不会被废弃。
+
+但是这样，会造成一些代码执行效率的降低。
+
+如果确认某个对象，在使用期间肯定不会被废弃，那么直接使用`__unsafe_unretained`，直接使用`对象的地址`，而不会对对象进行任何的`retian/release/autorelease`。
+
+## 使用`__strong`强持有方法的返回值对象时，与`__weak`是有区别的
+
+### 有一对重要的函数，用于返回值对象的内存管理优化
+
+第一个、
+
+```c
+id objc_autoreleaseReturnValue(id obj);
+```
+
+第二个、
+
+```c
+id objc_retainAutoreleasedReturnValue(id obj);
+```
+
+### 对于`+[NSMutableArray array]`最终的c实现代码为如下:
+
+```objc
+@implementation NSMutableArray
+
++ (id)array {
+
+	//1. 生成一个数组对象
+	id obj = objc_msgSend(NSMutableArray, @selector(alloc));
+	
+	//2. 执行对象的初始化init方法
+	obj = objc_msgSend(obj, @selector(init));
+	
+	//3. 【重点】
+	return objc_autoreleaseReturnValue(obj);
+}
+
+@end
+```
+
+### 对于其他类对象中，使用`__strong`持有该方法的返回值对象的objc代码
+
+```objc
+@implementation ViewController 
+ 
+- (void) test  {
+	
+	id __strong obj = [NSMutableArray array];
+}
+ 
+@emd
+```
+
+最终被编译成为的c代码大致如下:
+
+```c
+void test(id target, SEL sel) {
+	
+	//1. 调用方法获取返回值对象
+	id obj = objc_msgSend(NSMutableArray, @selector(array));
+
+	//2. 【重点】 
+	objc_retainAutoreleasedReturnValue(obj);
+
+	//3.
+	objc_release(obj);
+}
+```
+	
+### `objc_autoreleaseReturnValue(id obj)` 出现在返回一个返回值的函数代码中
+
+```c
+id  objc_autoreleaseReturnValue(id obj)
+{
+	// 1. 如果调用函数的一方，在获取到返回值后，使用了 objc_retainAutoreleasedReturnValue(obj)
+	// 就走如下if语句，
+	// 首先、对该返回值对象做一个标记
+	// 最后、直接返回这个返回值对象
+    if (callerAcceptsFastAutorelease(__builtin_return_address(0))) {//判断调用方法，是否使用了 objc_retainAutoreleasedReturnValue(obj)
+        tls_set_direct(AUTORELEASE_POOL_RECLAIM_KEY, obj);//对该返回值对象做一个标记
+        return obj;
+    }
+
+    //2. 相反如果在获取到返回值后，没有使用 objc_retainAutoreleasedReturnValue(obj)
+    // 则将对象注册到一个释放池中，然后再返回
+    return objc_autorelease(obj);
+}
+```
+
+### `objc_retainAutoreleasedReturnValue()` 出现在调用某个函数获取一个objc返回值对象的代码的`紧接着的下面一行`
+
+比如:
+
+```c
+void test(id target, SEL sel) {
+	
+	//1. 调用方法获取返回值对象
+	id obj = objc_msgSend(NSMutableArray, @selector(array));
+
+	//2. 【重点】 
+	objc_retainAutoreleasedReturnValue(obj);
+
+	//3.
+	objc_release(obj);
+}
+```
+
+看`objc_retainAutoreleasedReturnValue(obj);`做了啥:
+
+```c
+id objc_retainAutoreleasedReturnValue(id obj)
+{
+
+	//1. 判断传入的对象，是否是需要做内存优化。如果需要走如下if语句:
+	// 首先、根据标记从缓存中取出返回值对象
+	// 然后、取消这个对象的返回值内存优化标记
+	// 最后、返回这个对象
+    if (obj == tls_get_direct(AUTORELEASE_POOL_RECLAIM_KEY)) {
+        tls_set_direct(AUTORELEASE_POOL_RECLAIM_KEY, 0);
+        return obj;
+    }
+
+    //2. 而如果没有被标记做返回值优化的对象
+    // 会被retain一次，增加其retainCount
+    return objc_retain(obj);
+}
+```
+
+基本上就可以看明白`objc_autoreleaseReturnValue(id obj)`与`objc_retainAutoreleasedReturnValue(id obj)`这一对函数，在返回值为objc对象时，做的优化了。
+
+两个函数配合起来，`禁止`返回值objc对象被注册到`autorelease pool`的多余过程。		
+
+## objc对象弱引用实现
+
+- (1) NSValue
+- (2) block + `__weak`
+- (3) NSProxy或NSObject的消息转发
+
+具体参考`几种弱引用实现方法.md`.
+
+
 ## FMDatabaseQueue解决`dispatch_sync(queue, ^(){});`可能导致多线程死锁
 
 ### 主要是如下两个相关函数的使用:
@@ -1924,8 +1766,6 @@ dispatch_queue_set_specific(queue, kNetworkCacheMetaDispatchQueueSpecificKey, (v
 	});
 }
 ```
-
-
 
 ## 借助`NSProxy`实现动态代理，以及`消息转发阶段1`机制来模拟`多继承`
 
@@ -2128,210 +1968,6 @@ static const char XZHIvarTypeCBitFields = _C_BFLD;//b
 ```
 
 注意，`'A'`是一个字符，`"A"`才是一个字符串。
-
-## objc对象的内存管理
-
-
-### 错误纠正: 对象的`释放`与`废弃`，是两个`不同的阶段`。
-
-> 释放
-
-应该是释放对象的`持有`，即对objc对象发送`retain\release\autorelase`等消息，修改objc对象的`retainCount`值，但是对象的内存一直都还存在。
-
-释放持有的操作，是`同步`的。
-
-> 废弃
-
-当某个`空闲`时间，系统才会将内存的数据全部擦除干净，然后将这块内存`合并为系统未使用的内存`中。而此时如果程序继续访问该内存块，就会造成程序崩溃。
-
-内存的彻底废弃操作，是`异步`的，也就是说有一定的`延迟`。
-
-所以说，执行了`-[NSObject dealloc]`，并不是说对象所在内存就被废弃了，只是对于常理来说，这个对象已经标记为即将废弃，程序中也不要再继续使用了。
-
-
-```objc
-- (void)testMRC {
-
-    _mrc = [[MRCTest alloc] init];
-    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
-    
-    MRCTest *tmp1 = [_mrc retain];
-    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
-    
-    [_mrc release];
-    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
-    
-    [tmp1 release];
-    NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);
-    
-    //【重要】尝试多次输出retainCount
-    for (NSInteger i = 0; i < 10; i++) {
-        NSLog(@"[_mrc retainCount] = %lu", [_mrc retainCount]);//【重要】循环执行几次之后，崩溃到此行
-    }
-}
-```
-
-运行之后，结果崩溃到for循环中的第二次或第三次循环，`程序崩溃`报错如下:
-
-```
-thread 1:EXC_BAD_ACCESS .... 
-```
-
-释放掉对象之后，指向该对象的指针，仍然会保留在局部方法块的所在栈中，仍然是可以在短暂的时间内继续通过指针访问到对象。但是超过一定时间后，对象才会被彻底废弃掉，这个时候如果还去使用这个指针就会造成程序崩溃。
-
-那这样是说最终对象的内存废弃过程，是一个`异步`执行的吗？或者说有一定的`延迟时间`吗？
-
-是`延迟`的，因为最终对象内存会被擦除掉，并与系统内存合并到一起，所以这个过程确实是一个异步的。
-
-### 小结使用 `__strong` 修饰对象的指针变量:
-
-- (1) 会自动添加对象的`retain\release`的消息代码
-- (2) 完美的满足了引用计数器方式管理内存
-	- 自己生成的对象，自己持有
-	- 非自己生成的对象，自己也能持有
-	- 不再需要自己持有的对象时进行释放
-	- 非自己持有的对象无法释放
-
-
-### 使用 `__strong、__weak、__autoreleasing` 这三种修饰指向的对象指针，会由ARC系统自动完成:
-
-- 自动初始化为nil
-- 当所指向的对象被废弃掉时，同样也会被设置为nil
-
-相反，`__unsafe_unretained`在对象被废弃掉时，不会被设置为nil。
-
-### `__weak`为了解决对象之间的循环引用而生
-
-图示
-
-![Markdown](http://i1.piimg.com/1949/88a1d99f16424bcf.jpg)
-
-
-###  `__unsafe_unretained`
-
-正如其名包含两个部分:
-
-- (1) unsafe 不安全，这点是与`weak`不同点
-- (2) unretained 不强引用持有，这是与`weak`的相同点
-
-### `__autoreleasing`
-
-分析下`+[NSMutableArray array]`返回值对象处理:
-
-```objc
-+ (id)array {
-
-	//1. 生成一个数组对象
-	id obj = objc_msgSend(NSMutableArray, @selector(alloc));
-	
-	//2. 执行对象的初始化init方法
-	obj = objc_msgSend(obj, @selector(init));
-	
-	//3. 返回一个autorelease的返回值
-	return objc_autoreleaseReturnValue(obj);
-}
-```
-
-- (1) 默认`__strong`修饰的指针变量，持有住生成的NSMutableArray对象
-- (2) 局部指针变量`obj`超出函数域，被自动设置为nil
-- (3) 因为方法名并非上面的四种之一，所以返回值NSMutableArray对象，会被自动注册到autoreleasePool
-
-在使用`__weak`修饰的指针变量时，会由编译器自动插入，将指针变量指向的对象注册到autoreleasPool的代码。
-
-那么为什么要这样的了？因为`__weak`变量:
-
-- (1) 支持有对象的一个`弱引用`
-- (2) 不能保证访问该对象的整个过程中，对象一定不会被废弃
-
-所以，通过将弱引用的对象，注册到autoreleasePool中，从而保证整个操作过程（autoreleasePool结束之前），弱引用对象都不会被废弃。
-
-
-### 属性修饰符与对象所有权修饰符的关系
-
-| 属性声明时的修饰符 | 对象所有权修饰符 | 
-| :-------------: |:-------------:| 
-| assign | `__unsafe_unretained` | 
-| copy | `__strong`（首先是拷贝原始对象得到一个新的对象，然后再强引用新的对象，释放老的对象） | 
-| retain | `__strong` | 
-| strong | `__strong` | 
-| `unsafe_unretained` | `__unsafe_unretained` | 
-| weak | `__weak` | 
-
-### 使用`__strong`强持有方法的返回值对象时，与`__weak`是有区别的
-
-有一对重要的函数，用于返回值对象的内存管理优化
-
-- (1) `objc_retainAutoreleasedReturnValue()`
-
-- (2) `objc_autoreleaseReturnValue()`
-
-对于`+[NSMutableArray array]`的实现代码
-
-```objc
-+ (id)array {
-
-	//1. 生成一个数组对象
-	id obj = objc_msgSend(NSMutableArray, @selector(alloc));
-	
-	//2. 执行对象的初始化init方法
-	obj = objc_msgSend(obj, @selector(init));
-	
-	//3. 返回一个autorelease的返回值
-	return objc_autoreleaseReturnValue(obj);
-}
-```
-
-对于使用`__strong`持有该方法的返回值对象
-
-```objc
-id __strong obj = [NSMutableArray array];
-```
-
-会被编译成如下代码:
-
-```c
-//1. 
-id obj = objc_msgSend(NSMutableArray, @selector(array));//取的别人生成的对象
-
-//2. 【重点】 
-objc_retainAutoreleasedReturnValue(obj);
-
-//3.
-objc_release(obj);
-```
-
-所以，`objc_autoreleaseReturnValue(obj)`与`objc_autoreleaseReturnValue(obj)`之间是有关系的，决定到底是如何处理方法的返回值
-
-- (1) `objc_retainAutoreleasedReturnValue()` 与 `objc_autoreleaseReturnValue()` 是 `成对` 出现的
-
-- (2) `objc_retainAutoreleasedReturnValue()`: 出现在调用方，获取返回值的代码中
-	
-- (3) `objc_autoreleaseReturnValue()`: 出现在被调函数代码中
-
-- (4) `objc_retainAutoreleasedReturnValue()`的作用:
-	- 首先是去持有一个方法返回的对象，但是分为`两种`持有方式
-	- 持有方式一【weak】、将返回的对象注册到一个`autoreleasePool`去持有
-	- 持有方式二【retain、strong】、直接通过`传递`的方式获取对象（不会进行释放池及注册）
-
-- (5) `objc_autoreleaseReturnValue()`的作用:
-	- 首先监测`函数调用方`，是否在取得了函数放回对象之后，紧接着使用了`objc_retainAutoreleasedReturnValue()`
-		- **看获取返回值对象，使用的是weak还是retain/strong**
-	- 如果使用了`objc_retainAutoreleasedReturnValue()`:
-		- 使用`持有方式二`来直接传递返回对象
-		
-所以，最好不要使用`__weak`的方式持有方法的返回值，会有一个注册到autoreleasePool的多余过程。
-
-### 由此可知，当使用`__weak`修饰的指针变量指向的对象时，会做很多的额外的处理代码，所以会消耗一定的cpu时间。所以，最好只在避免循环引用的时候，去使用`__weak`。
-
-- (1) 情况一、使用`__weak`修饰的指针变量指向，刚刚创建的对象
-	- 会将对象自动注册到autoreleasePool
-
-- (2) 情况二、当被指向的对象被废弃时
-	- (2.1) 从weak表中，获取`被废弃对象`对应的`__weak修饰的 指针变量`
-    - (2.2) 将找到的`weak指针变量`赋值为nil
-    - (2.3) 表一删除、从`weak表`中`删除`废弃对象地址对应的记录项
-    - (2.4) 表二删除、从`引用计数器表`中`删除`废弃对象地址对应的记录项
-
 
 ## objc对象的等同性判断写法模板
 

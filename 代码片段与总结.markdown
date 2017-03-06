@@ -233,7 +233,7 @@ UITextField *filed = [UITextField new];
 }
 ```
 
-## 后台任务 UIBackgroundTaskIdentifier
+## 后台任务  UIBackgroundTaskIdentifier
 
 ```objc
 @implementation FQLNetworkCacheManager {
@@ -244,7 +244,7 @@ UITextField *filed = [UITextField new];
 
 	//1. 开启一个后台任务
     _bgTask = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
-        [[UIApplication sharedApplication] endBackgroundTask:bgTask];
+        [[UIApplication sharedApplication] endBackgroundTask: _bgTask];
         _bgTask = UIBackgroundTaskInvalid;
     }];
 
@@ -252,7 +252,7 @@ UITextField *filed = [UITextField new];
     [self _doWork];
 
 	// 3. 结束后台任务
-    [[UIApplication sharedApplication] endBackgroundTask:bgTask];
+    [[UIApplication sharedApplication] endBackgroundTask: _bgTask];
     _bgTask = UIBackgroundTaskInvalid;
 }
 
@@ -1684,3 +1684,29 @@ _productFrames = [productsFrame copy];
 
 @end
 ```
+
+### 通过 `对象.属性` 进行读写
+	
+- 可以`懒加载`的属性
+- **调用setter设置新值时，会触发KVO通知**
+- 设置新值时，会根据属性定义的`内存管理`对应的修饰规则
+	- assign、copy、weak、strong、`unsafe_unretained` ...
+- 还可以重写 setter与getter 方法，完成断点调试
+
+### 通过 `_属性名` 进行读写
+
+- `绕过`了属性定义的`内存管理`修饰
+- `绕过`了属性定义的`读写权限`修饰（可以使用KVC操作私有实例变量）
+- 无法触发KVO通知
+
+### 合理组合上面两种形式
+
+- (1) 对象内部，大多数情况下都应该如下
+	- `读`实例变量 >>> 使用 `_variable` 来读实例变量，避免每次进入消息发送进入class结构体中查询SEL对应的IMP
+	- `写`实例变量 >>> 使用 `self.属性名 = 新值` 来写数据，按照属性定义的内存管理修饰，以及提供KVO通知
+
+- (2) 对象内部，`initXxx`函数与`dealloc`函数中，总是应该是通过`_variable`进行`读和写`
+	- 因为`子类`可能重写属性的setter与getter方法实现
+	- 那么调用子类的setter时，就会导致父类方法中的某一些实例变量未能初始化，导致程序崩溃
+
+- (3)对于使用`懒加载`的属性，总应该是使用 `self.属性名`来进行`读`
